@@ -156,21 +156,37 @@ document.addEventListener("DOMContentLoaded", () => {
     const renderSourceHealth = (sources) => {
       const okCount = sources.filter((source) => source.ok).length;
       const fallbackCount = sources.filter((source) => source.tls_fallback).length;
-      sourceHealthSummary.textContent =
-        `${okCount}/${sources.length}개 소스 연결됨` +
-        (fallbackCount ? ` · TLS 우회 ${fallbackCount}개` : "");
+      
+      const summaryKo = `${okCount}/${sources.length}개 소스 연결됨${fallbackCount ? ` · TLS 우회 ${fallbackCount}개` : ""}`;
+      const summaryEn = `${okCount}/${sources.length} sources connected${fallbackCount ? ` · TLS bypass ${fallbackCount}` : ""}`;
+      
+      sourceHealthSummary.innerHTML = `
+        <span class="lang-ko">${summaryKo}</span>
+        <span class="lang-en" style="display:none;">${summaryEn}</span>
+      `;
+      
       sourceHealthList.innerHTML = "";
       sources.forEach((source) => {
         const item = document.createElement("article");
         item.className = `source-health-item ${source.ok ? "is-ok" : "is-fail"}`;
-        const status = source.ok ? "정상" : "실패";
+        
+        const statusKo = source.ok ? "정상" : "실패";
+        const statusEn = source.ok ? "OK" : "Failed";
         const entries = Number(source.entries || 0);
+        
+        const tlsKo = source.tls_fallback ? "TLS 우회" : `HTTP ${source.status_code || "-"}`;
+        const tlsEn = source.tls_fallback ? "TLS Bypass" : `HTTP ${source.status_code || "-"}`;
+        
         item.innerHTML = `
           <div>
             <strong>${source.name}</strong>
-            <span>${source.bucket} · ${entries}건 · ${status}</span>
+            <span class="lang-ko">${source.bucket} · ${entries}건 · ${statusKo}</span>
+            <span class="lang-en" style="display:none;">${source.bucket} · ${entries} items · ${statusEn}</span>
           </div>
-          <small>${source.tls_fallback ? "TLS 우회" : `HTTP ${source.status_code || "-"}`}</small>
+          <small>
+            <span class="lang-ko">${tlsKo}</span>
+            <span class="lang-en" style="display:none;">${tlsEn}</span>
+          </small>
         `;
         if (source.error) {
           const error = document.createElement("code");
@@ -183,7 +199,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     sourceHealthAction.addEventListener("click", async () => {
       sourceHealthAction.disabled = true;
-      sourceHealthSummary.textContent = "외부 소스를 확인하고 있습니다.";
+      sourceHealthSummary.innerHTML = `
+        <span class="lang-ko">외부 소스를 확인하고 있습니다.</span>
+        <span class="lang-en" style="display:none;">Checking external sources.</span>
+      `;
       try {
         const response = await fetch("/api/sources/health");
         const payload = await response.json();
