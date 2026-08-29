@@ -27,14 +27,15 @@ TECHNICAL_TAG_PREFIXES = ("event_start:", "event_end:")
 class RegionSignal:
     key: str
     label_ko: str
+    label_en: str
 
 
 REGION_FILTERS = [
-    RegionSignal("all", "전체"),
-    RegionSignal("us", "미국"),
-    RegionSignal("europe", "유럽"),
-    RegionSignal("asia", "아시아"),
-    RegionSignal("global", "글로벌"),
+    RegionSignal("all", "전체", "All"),
+    RegionSignal("us", "미국", "US"),
+    RegionSignal("europe", "유럽", "Europe"),
+    RegionSignal("asia", "아시아", "Asia"),
+    RegionSignal("global", "글로벌", "Global"),
 ]
 
 REGION_LABELS = {region.key: region.label_ko for region in REGION_FILTERS}
@@ -139,6 +140,16 @@ def display_summary_ko(article: Article) -> str:
     return "핵심 동향을 확인할 수 있는 자동차 산업 참고 링크입니다."
 
 
+def display_title_en(article: Article) -> str:
+    return _clean_title(article.title)
+
+
+def display_summary_en(article: Article) -> str:
+    if article.excerpt:
+        return article.excerpt.strip()
+    return "Reference link for key trends in the automotive industry."
+
+
 def display_url(article: Article) -> str | None:
     if _is_intermediary_url(article.url):
         return None
@@ -154,7 +165,7 @@ def regions_for_article(article: Article) -> list[RegionSignal]:
     ]
     if not matched:
         matched = ["global"]
-    return [RegionSignal(key, REGION_LABELS[key]) for key in matched]
+    return [next(r for r in REGION_FILTERS if r.key == key) for key in matched]
 
 
 def region_counts(articles: list[Article]) -> dict[str, int]:
@@ -214,7 +225,7 @@ def sort_articles_by_priority(articles: list[Article]) -> list[Article]:
     return sorted(
         articles,
         key=lambda article: (
-            LEVELS[assess_priority(article).level][1],
+            LEVELS[assess_priority(article).level][2],
             assess_priority(article).score,
             article.score,
             _timestamp(article.published_at),

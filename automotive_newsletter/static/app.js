@@ -207,7 +207,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const button = sendForm.querySelector("button");
       button.disabled = true;
       try {
-        const response = await fetch(`/api/issues/${issueDate}/send`, { method: "POST" });
+        const lang = document.documentElement.classList.contains("lang-en-active") ? "en" : "ko";
+        const response = await fetch(`/api/issues/${issueDate}/send?lang=${lang}`, { method: "POST" });
         const payload = await response.json();
         if (!response.ok || !payload.ok) {
           throw new Error(payload.message || "메일 발송에 실패했습니다.");
@@ -218,6 +219,27 @@ document.addEventListener("DOMContentLoaded", () => {
       } finally {
         button.disabled = false;
       }
+    });
+  }
+
+  const langToggle = document.querySelector("[data-lang-toggle]");
+  if (langToggle) {
+    const textSpan = langToggle.querySelector(".lang-text");
+    
+    // Initialize language from localStorage
+    const savedLang = localStorage.getItem("preferred_lang");
+    if (savedLang === "en") {
+      document.documentElement.classList.add("lang-en-active");
+      if (textSpan) textSpan.textContent = "KO";
+    }
+
+    langToggle.addEventListener("click", () => {
+      document.documentElement.classList.toggle("lang-en-active");
+      const isEn = document.documentElement.classList.contains("lang-en-active");
+      if (textSpan) {
+        textSpan.textContent = isEn ? "KO" : "EN";
+      }
+      localStorage.setItem("preferred_lang", isEn ? "en" : "ko");
     });
   }
 });

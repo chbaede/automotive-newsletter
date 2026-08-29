@@ -8,14 +8,16 @@ from .config import Settings, load_settings
 from .models import NewsletterIssue
 from .presentation import (
     display_summary_ko,
+    display_summary_en,
     display_title_ko,
+    display_title_en,
     display_url,
     regions_for_article,
     sort_articles_for_section,
     visible_tags,
 )
 from .priority import assess_priority
-from .sources import SECTION_LABELS, SECTION_ORDER
+from .sources import SECTION_LABELS, SECTION_LABELS_EN, SECTION_ORDER
 
 
 class MailConfigError(RuntimeError):
@@ -30,16 +32,27 @@ PRIORITY_COLORS = {
 }
 
 
-def build_email_html(issue: NewsletterIssue) -> str:
-    sections = _email_sections(issue)
+def build_email_html(issue: NewsletterIssue, lang: str = "ko") -> str:
+    sections = _email_sections(issue, lang=lang)
     metrics = _email_metrics(sections)
+    is_en = lang == "en"
+    
     preheader = (
+        f"{issue.issue_date} Automotive Industry Briefing "
+        f"Total {metrics['total']}, Critical {metrics['critical']}, "
+        f"Conferences {metrics['conference']}"
+    ) if is_en else (
         f"{issue.issue_date} 자동차 산업 핵심 브리핑 "
         f"{metrics['total']}건, 최우선 {metrics['critical']}건, "
         f"예정 컨퍼런스 {metrics['conference']}건"
     )
+    
+    title_text = "Automotive Industry Briefing" if is_en else "자동차 산업 브리핑"
+    subtitle_text = "Prioritized briefing on OEM, Tier 1, SDV, institutional reports and upcoming conferences." if is_en else "OEM, Tier 1, SDV, 기관 리포트와 예정 컨퍼런스를 우선순위 중심으로 정리했습니다."
+    warnings_title = "Collection Note" if is_en else "수집 참고"
+    
     parts = [
-        '<!doctype html><html lang="ko"><head><meta charset="utf-8">',
+        f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         "<title>Automotive Intelligence Brief</title></head>",
         '<body style="margin:0;padding:0;background-color:#f3f6f8;color:#18202a;">',
@@ -49,12 +62,12 @@ def build_email_html(issue: NewsletterIssue) -> str:
         '<table role="presentation" width="720" cellspacing="0" cellpadding="0" style="width:100%;max-width:720px;border-collapse:separate;border-spacing:0;font-family:Arial,Helvetica,sans-serif;">',
         '<tr><td style="background-color:#12343b;color:#ffffff;padding:30px 30px 24px;border-radius:8px 8px 0 0;">',
         '<div style="font-size:12px;font-weight:700;line-height:1.4;color:#b9d8d4;">Automotive Intelligence Brief</div>',
-        f'<h1 style="margin:8px 0 8px;font-size:28px;line-height:1.22;font-weight:800;color:#ffffff;">{html.escape(issue.issue_date)} 자동차 산업 브리핑</h1>',
-        '<p style="margin:0;font-size:14px;line-height:1.6;color:#d7e8e5;">OEM, Tier 1, SDV, 기관 리포트와 예정 컨퍼런스를 우선순위 중심으로 정리했습니다.</p>',
+        f'<h1 style="margin:8px 0 8px;font-size:28px;line-height:1.22;font-weight:800;color:#ffffff;">{html.escape(issue.issue_date)} {title_text}</h1>',
+        f'<p style="margin:0;font-size:14px;line-height:1.6;color:#d7e8e5;">{subtitle_text}</p>',
         "</td></tr>",
         '<tr><td style="background-color:#ffffff;padding:24px 30px 30px;border-radius:0 0 8px 8px;border:1px solid #dde4ec;border-top:0;">',
         '<h2 style="margin:0 0 12px;font-size:18px;line-height:1.3;color:#18202a;">Executive Snapshot</h2>',
-        _metric_table(metrics),
+        _metric_table(metrics, lang=lang),
     ]
     for category, label, articles in sections:
         if not articles:
@@ -63,10 +76,10 @@ def build_email_html(issue: NewsletterIssue) -> str:
             f'<h2 style="margin:28px 0 12px;font-size:20px;line-height:1.3;color:#18202a;">{html.escape(label)}</h2>'
         )
         for article in articles:
-            parts.append(_article_card_html(article))
+            parts.append(_article_card_html(article, lang=lang))
     if issue.warnings:
         parts.append(
-            '<h2 style="margin:28px 0 12px;font-size:20px;line-height:1.3;color:#18202a;">수집 참고</h2>'
+            f'<h2 style="margin:28px 0 12px;font-size:20px;line-height:1.3;color:#18202a;">{warnings_title}</h2>'
         )
         for warning in issue.warnings:
             parts.append(
@@ -84,12 +97,18 @@ def build_email_html(issue: NewsletterIssue) -> str:
     return "".join(parts)
 
 
-def build_email_text(issue: NewsletterIssue) -> str:
-    sections = _email_sections(issue)
+def build_email_text(issue: NewsletterIssue, lang: str = "ko") -> str:
+    sections = _email_sections(issue, lang=lang)
     metrics = _email_metrics(sections)
+    is_en = lang == "en"
+    
     lines = [
         f"Automotive Intelligence Brief - {issue.issue_date}",
-        f"총 브리핑: {metrics['total']}건 / 최우선 뉴스: {metrics['critical']}건 / 높음: {metrics['high']}건 / 예정 컨퍼런스: {metrics['conference']}건",
+        (
+            f"Total News: {metrics['total']} / Critical: {metrics['critical']} / High: {metrics['high']} / Conferences: {metrics['conference']}"
+        ) if is_en else (
+            f"총 브리핑: {metrics['total']}건 / 최우선 뉴스: {metrics['critical']}건 / 높음: {metrics['high']}건 / 예정 컨퍼런스: {metrics['conference']}건"
+        ),
         "",
     ]
     for _, label, articles in sections:
@@ -98,12 +117,20 @@ def build_email_text(issue: NewsletterIssue) -> str:
         lines.append(label)
         for article in articles:
             priority = assess_priority(article)
-            lines.append(f"- [{priority.label_ko}] {display_title_ko(article)}")
-            lines.append(f"  중요도: {priority.score} / {priority.reason_ko}")
-            lines.append(f"  {display_summary_ko(article)}")
-            region_label = ", ".join(region.label_ko for region in regions_for_article(article))
-            lines.append(f"  지역: {region_label}")
-            lines.append(f"  출처: {article.source}")
+            
+            p_label = priority.label_en if is_en else priority.label_ko
+            title = display_title_en(article) if is_en else display_title_ko(article)
+            reason = priority.reason_en if is_en else priority.reason_ko
+            summary = display_summary_en(article) if is_en else display_summary_ko(article)
+            
+            lines.append(f"- [{p_label}] {title}")
+            lines.append(f"  Score: {priority.score} / {reason}" if is_en else f"  중요도: {priority.score} / {reason}")
+            lines.append(f"  {summary}")
+            
+            region_label = ", ".join(region.label_en if is_en else region.label_ko for region in regions_for_article(article))
+            lines.append(f"  Region: {region_label}" if is_en else f"  지역: {region_label}")
+            lines.append(f"  Source: {article.source}" if is_en else f"  출처: {article.source}")
+            
             source_url = display_url(article)
             if source_url:
                 lines.append(f"  원문: {source_url}")
@@ -111,7 +138,7 @@ def build_email_text(issue: NewsletterIssue) -> str:
     return "\n".join(lines)
 
 
-def send_issue(issue: NewsletterIssue, settings: Settings | None = None) -> None:
+def send_issue(issue: NewsletterIssue, settings: Settings | None = None, lang: str = "ko") -> None:
     settings = settings or load_settings()
     missing = settings.missing_smtp_fields()
     if missing:
@@ -121,8 +148,8 @@ def send_issue(issue: NewsletterIssue, settings: Settings | None = None) -> None
     message["Subject"] = f"[Automotive Brief] {issue.issue_date} | OEM·Tier1·SDV"
     message["From"] = settings.smtp_from or ""
     message["To"] = ", ".join(settings.recipients)
-    message.set_content(build_email_text(issue))
-    message.add_alternative(build_email_html(issue), subtype="html")
+    message.set_content(build_email_text(issue, lang=lang))
+    message.add_alternative(build_email_html(issue, lang=lang), subtype="html")
 
     with smtplib.SMTP(settings.smtp_host or "", settings.smtp_port, timeout=20) as smtp:
         if settings.smtp_tls:
@@ -132,7 +159,7 @@ def send_issue(issue: NewsletterIssue, settings: Settings | None = None) -> None
         smtp.send_message(message)
 
 
-def _email_sections(issue: NewsletterIssue) -> list[tuple[str, str, list]]:
+def _email_sections(issue: NewsletterIssue, lang: str = "ko") -> list[tuple[str, str, list]]:
     sections = []
     for category in SECTION_ORDER:
         articles = sort_articles_for_section(
@@ -140,7 +167,8 @@ def _email_sections(issue: NewsletterIssue) -> list[tuple[str, str, list]]:
             [article for article in issue.articles if article.category == category],
             issue.issue_date,
         )
-        sections.append((category, SECTION_LABELS[category], articles))
+        label = SECTION_LABELS_EN[category] if lang == "en" else SECTION_LABELS[category]
+        sections.append((category, label, articles))
     return sections
 
 
@@ -163,12 +191,13 @@ def _email_metrics(sections: list[tuple[str, str, list]]) -> dict[str, int]:
     }
 
 
-def _metric_table(metrics: dict[str, int]) -> str:
+def _metric_table(metrics: dict[str, int], lang: str = "ko") -> str:
+    is_en = lang == "en"
     cells = [
-        ("총 브리핑", metrics["total"], "#12343b"),
-        ("최우선 뉴스", metrics["critical"], "#b42318"),
-        ("높음", metrics["high"], "#b45309"),
-        ("예정 컨퍼런스", metrics["conference"], "#0f766e"),
+        ("Total News" if is_en else "총 브리핑", metrics["total"], "#12343b"),
+        ("Critical" if is_en else "최우선 뉴스", metrics["critical"], "#b42318"),
+        ("High" if is_en else "높음", metrics["high"], "#b45309"),
+        ("Conferences" if is_en else "예정 컨퍼런스", metrics["conference"], "#0f766e"),
     ]
     rendered = []
     for label, value, color in cells:
@@ -186,11 +215,12 @@ def _metric_table(metrics: dict[str, int]) -> str:
     )
 
 
-def _article_card_html(article) -> str:
+def _article_card_html(article, lang: str = "ko") -> str:
+    is_en = lang == "en"
     priority = assess_priority(article)
     colors = PRIORITY_COLORS[priority.level]
     source_url = display_url(article)
-    region_label = ", ".join(region.label_ko for region in regions_for_article(article))
+    region_label = ", ".join((region.label_en if is_en else region.label_ko) for region in regions_for_article(article))
     tags = visible_tags(article)
     tag_html = ""
     if tags:
@@ -202,23 +232,36 @@ def _article_card_html(article) -> str:
             )
             + "</div>"
         )
+    
+    link_text = "Read Original" if is_en else "원문 보기"
+    no_link_text = "Link Pending" if is_en else "원문 확인 중"
+    
     cta_html = (
-        f'<a href="{html.escape(source_url)}" style="display:inline-block;margin-top:14px;padding:10px 14px;border-radius:8px;background-color:#174ea6;color:#ffffff;font-size:13px;font-weight:800;text-decoration:none;">원문 보기</a>'
+        f'<a href="{html.escape(source_url)}" style="display:inline-block;margin-top:14px;padding:10px 14px;border-radius:8px;background-color:#174ea6;color:#ffffff;font-size:13px;font-weight:800;text-decoration:none;">{link_text}</a>'
         if source_url
-        else '<span style="display:inline-block;margin-top:14px;color:#657285;font-size:13px;font-weight:700;">원문 확인 중</span>'
+        else f'<span style="display:inline-block;margin-top:14px;color:#657285;font-size:13px;font-weight:700;">{no_link_text}</span>'
     )
+    
+    p_label = priority.label_en if is_en else priority.label_ko
+    title = display_title_en(article) if is_en else display_title_ko(article)
+    reason = priority.reason_en if is_en else priority.reason_ko
+    summary = display_summary_en(article) if is_en else display_summary_ko(article)
+    
+    region_prefix = "Region: " if is_en else "지역: "
+    source_prefix = "Source: " if is_en else "출처: "
+    
     return (
         f'<table class="brief-card brief-card--{priority.level}" role="presentation" width="100%" cellspacing="0" cellpadding="0" '
         f'style="border-collapse:separate;border-spacing:0;margin:0 0 12px;border:1px solid #dde4ec;border-left:5px solid {colors["solid"]};border-radius:8px;background-color:#ffffff;">'
         '<tr><td style="padding:16px 18px 17px;">'
         '<div style="margin-bottom:10px;">'
-        f'<span class="priority-badge" style="display:inline-block;margin:0 8px 7px 0;padding:5px 9px;border-radius:999px;background-color:{colors["solid"]};color:#ffffff;font-size:12px;line-height:1.2;font-weight:800;">{html.escape(priority.label_ko)} · {priority.score}</span>'
+        f'<span class="priority-badge" style="display:inline-block;margin:0 8px 7px 0;padding:5px 9px;border-radius:999px;background-color:{colors["solid"]};color:#ffffff;font-size:12px;line-height:1.2;font-weight:800;">{html.escape(p_label)} · {priority.score}</span>'
         f'<span style="display:inline-block;margin-bottom:7px;color:#657285;font-size:12px;line-height:1.2;font-weight:700;">{html.escape(article.source)}</span>'
         "</div>"
-        f'<h3 style="margin:0 0 9px;font-size:18px;line-height:1.38;color:#18202a;">{html.escape(display_title_ko(article))}</h3>'
-        f'<p style="margin:0 0 10px;padding:9px 10px;border-radius:8px;background-color:{colors["soft"]};color:{colors["text"]};font-size:13px;line-height:1.55;font-weight:700;">{html.escape(priority.reason_ko)}</p>'
-        f'<p style="margin:0;color:#334155;font-size:14px;line-height:1.62;">{html.escape(display_summary_ko(article))}</p>'
-        f'<p style="margin:12px 0 0;color:#657285;font-size:12px;line-height:1.55;">지역: {html.escape(region_label)} · 출처: {html.escape(article.source)}</p>'
+        f'<h3 style="margin:0 0 9px;font-size:18px;line-height:1.38;color:#18202a;">{html.escape(title)}</h3>'
+        f'<p style="margin:0 0 10px;padding:9px 10px;border-radius:8px;background-color:{colors["soft"]};color:{colors["text"]};font-size:13px;line-height:1.55;font-weight:700;">{html.escape(reason)}</p>'
+        f'<p style="margin:0;color:#334155;font-size:14px;line-height:1.62;">{html.escape(summary)}</p>'
+        f'<p style="margin:12px 0 0;color:#657285;font-size:12px;line-height:1.55;">{region_prefix}{html.escape(region_label)} · {source_prefix}{html.escape(article.source)}</p>'
         f"{tag_html}{cta_html}"
         "</td></tr></table>"
     )

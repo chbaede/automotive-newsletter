@@ -124,3 +124,12 @@ DEFAULT_FEEDS = [
         ),
     ),
 ]
+
+SECTION_LABELS_EN = {
+    "big": "Top News",
+    "oem": "OEM Trends",
+    "tier1": "Tier 1 / Supply Chain",
+    "sdv": "SDV / Software",
+    "institution": "Institutions / Magazines",
+    "conference": "Conferences / Events",
+}
