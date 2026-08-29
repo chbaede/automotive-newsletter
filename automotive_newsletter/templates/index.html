@@ -5,77 +5,147 @@
     <div class="brand">
       <span class="brand-mark">AN</span>
       <div>
-        <h1>Automotive 뉴스레터</h1>
-        <p>OEM · Tier 1 · SDV · 컨퍼런스</p>
+        <h1>
+          <span class="lang-ko">Automotive 뉴스레터</span>
+          <span class="lang-en" style="display:none;">Automotive Newsletter</span>
+        </h1>
+        <p>OEM · Tier 1 · SDV · Conference</p>
       </div>
     </div>
     <form class="collect-form" data-collect-form>
       <button type="submit" class="primary-action">
         <i data-lucide="refresh-cw"></i>
-        <span>새로 수집</span>
+        <span>
+          <span class="lang-ko">새로 수집</span>
+          <span class="lang-en" style="display:none;">Collect News</span>
+        </span>
       </button>
     </form>
     <nav class="history-list" aria-label="히스토리">
-      <div class="rail-label">히스토리</div>
+      <div class="rail-label">
+        <span class="lang-ko">히스토리</span>
+        <span class="lang-en" style="display:none;">History</span>
+      </div>
       {% for issue_date, count in history %}
         <a class="history-item {% if issue and issue.issue_date == issue_date %}active{% endif %}" href="/issues/{{ issue_date }}">
           <span>{{ issue_date }}</span>
-          <small>{{ count }}건</small>
+          <small>
+            {{ count }}<span class="lang-ko">건</span><span class="lang-en" style="display:none;"> items</span>
+          </small>
         </a>
       {% else %}
-        <p class="empty-note">아직 저장된 이슈가 없습니다.</p>
+        <p class="empty-note">
+          <span class="lang-ko">아직 저장된 이슈가 없습니다.</span>
+          <span class="lang-en" style="display:none;">No issues saved yet.</span>
+        </p>
       {% endfor %}
     </nav>
   </aside>
 
   <main class="issue-workspace">
+
+
+      <nav class="view-tabs" aria-label="화면 탭">
+        <button type="button" class="view-tab active" data-view-tab="news" aria-pressed="true">
+          <i data-lucide="newspaper"></i>
+          <span>
+            <span class="lang-ko">뉴스</span>
+            <span class="lang-en" style="display:none;">News</span>
+          </span>
+        </button>
+        <button type="button" class="view-tab" data-view-tab="settings" aria-pressed="false">
+          <i data-lucide="settings"></i>
+          <span>
+            <span class="lang-ko">메일 설정</span>
+            <span class="lang-en" style="display:none;">Mail Settings</span>
+          </span>
+        </button>
+        <button type="button" class="view-tab" data-view-tab="sources" aria-pressed="false">
+          <i data-lucide="activity"></i>
+          <span>
+            <span class="lang-ko">소스 상태</span>
+            <span class="lang-en" style="display:none;">Source Health</span>
+          </span>
+        </button>
+      
+      <div style="margin-left: auto; display: flex;">
+        <button type="button" class="lang-toggle-action" data-lang-toggle>
+            <i data-lucide="languages"></i>
+            <span class="lang-text">EN</span>
+          </button>
+      </div>
+    </nav>
+    <section data-view-panel="news">
     {% if issue %}
       <header class="issue-header">
         <div>
           <p class="eyebrow">{{ issue.issue_date }}</p>
           <h2>Automotive Intelligence Brief</h2>
-          <p class="subtitle">이슈가 될 큰 뉴스와 SDV 흐름을 우선순위로 정리했습니다.</p>
+          <p class="subtitle">
+            <span class="lang-ko">이슈가 될 큰 뉴스와 SDV 흐름을 우선순위로 정리했습니다.</span>
+            <span class="lang-en" style="display:none;">Prioritized briefing on major news and SDV trends.</span>
+          </p>
         </div>
-        <form data-send-form data-issue-date="{{ issue.issue_date }}">
-          <button type="submit" class="send-action">
-            <i data-lucide="send"></i>
-            <span>메일 발송</span>
-          </button>
-        </form>
+        <div class="header-actions" style="display: flex; gap: 0.5rem;">
+          <form data-send-form data-issue-date="{{ issue.issue_date }}">
+            <button type="submit" class="send-action">
+              <i data-lucide="send"></i>
+              <span>
+                <span class="lang-ko">메일 발송</span>
+                <span class="lang-en" style="display:none;">Send Email</span>
+              </span>
+            </button>
+          </form>
+        </div>
       </header>
 
       <section class="issue-metrics" aria-label="Executive Snapshot">
         <div class="metrics-heading">
           <p class="eyebrow">Executive Snapshot</p>
-          <h3>오늘의 핵심 브리핑</h3>
+          <h3>
+            <span class="lang-ko">오늘의 핵심 브리핑</span>
+            <span class="lang-en" style="display:none;">Today's Key Briefing</span>
+          </h3>
         </div>
         <div class="metric-grid">
           <div class="metric-card">
             <span class="metric-icon metric-icon--total"><i data-lucide="newspaper"></i></span>
             <div>
               <strong>{{ issue_metrics.total }}</strong>
-              <span>총 브리핑</span>
+              <span>
+                <span class="lang-ko">총 브리핑</span>
+                <span class="lang-en" style="display:none;">Total News</span>
+              </span>
             </div>
           </div>
           <div class="metric-card">
             <span class="metric-icon metric-icon--critical"><i data-lucide="siren"></i></span>
             <div>
               <strong>{{ issue_metrics.critical }}</strong>
-              <span>최우선 뉴스</span>
+              <span>
+                <span class="lang-ko">최우선 뉴스</span>
+                <span class="lang-en" style="display:none;">Critical</span>
+              </span>
             </div>
           </div>
           <div class="metric-card">
             <span class="metric-icon metric-icon--high"><i data-lucide="trending-up"></i></span>
             <div>
               <strong>{{ issue_metrics.high }}</strong>
-              <span>높음</span>
+              <span>
+                <span class="lang-ko">높음</span>
+                <span class="lang-en" style="display:none;">High</span>
+              </span>
             </div>
           </div>
           <div class="metric-card">
             <span class="metric-icon metric-icon--conference"><i data-lucide="calendar-days"></i></span>
             <div>
               <strong>{{ issue_metrics.conference }}</strong>
-              <span>예정 컨퍼런스</span>
+              <span>
+                <span class="lang-ko">예정 컨퍼런스</span>
+                <span class="lang-en" style="display:none;">Conferences</span>
+              </span>
             </div>
           </div>
         </div>
@@ -83,42 +153,43 @@
 
       <div class="status-line" data-status></div>
 
-      <nav class="view-tabs" aria-label="화면 탭">
-        <button type="button" class="view-tab active" data-view-tab="news" aria-pressed="true">
-          <i data-lucide="newspaper"></i>
-          <span>뉴스</span>
-        </button>
-        <button type="button" class="view-tab" data-view-tab="settings" aria-pressed="false">
-          <i data-lucide="settings"></i>
-          <span>메일 설정</span>
-        </button>
-        <button type="button" class="view-tab" data-view-tab="sources" aria-pressed="false">
-          <i data-lucide="activity"></i>
-          <span>소스 상태</span>
-        </button>
-      </nav>
-
-      <section data-view-panel="news">
         {% if priority_summary %}
           <section class="priority-radar" aria-label="Priority Radar">
             <div class="priority-radar__header">
               <div>
                 <p class="eyebrow">Priority Radar</p>
-                <h3>이슈화 우선순위</h3>
+                <h3>
+                  <span class="lang-ko">이슈화 우선순위</span>
+                  <span class="lang-en" style="display:none;">Issue Priority</span>
+                </h3>
               </div>
               <div class="priority-counts">
-                <span class="priority-count priority-count--critical">최우선 {{ priority_summary.counts.critical }}</span>
-                <span class="priority-count priority-count--high">높음 {{ priority_summary.counts.high }}</span>
-                <span class="priority-count priority-count--medium">보통 {{ priority_summary.counts.medium }}</span>
-                <span class="priority-count priority-count--watch">관찰 {{ priority_summary.counts.watch }}</span>
+                <span class="priority-count priority-count--critical">
+                  <span class="lang-ko">최우선</span><span class="lang-en" style="display:none;">Critical</span> {{ priority_summary.counts.critical }}
+                </span>
+                <span class="priority-count priority-count--high">
+                  <span class="lang-ko">높음</span><span class="lang-en" style="display:none;">High</span> {{ priority_summary.counts.high }}
+                </span>
+                <span class="priority-count priority-count--medium">
+                  <span class="lang-ko">보통</span><span class="lang-en" style="display:none;">Medium</span> {{ priority_summary.counts.medium }}
+                </span>
+                <span class="priority-count priority-count--watch">
+                  <span class="lang-ko">관찰</span><span class="lang-en" style="display:none;">Watch</span> {{ priority_summary.counts.watch }}
+                </span>
               </div>
             </div>
             <div class="priority-topline">
               {% for item in priority_summary.top_items[:3] %}
                 {% set item_url = display_url(item.article) %}
                 <a class="priority-topline__item priority-topline__item--{{ item.priority.level }}" {% if item_url %}href="{{ item_url }}" target="_blank" rel="noreferrer"{% else %}href="#{{ item.article.category }}"{% endif %}>
-                  <strong>{{ item.priority.label_ko }}</strong>
-                  <span>{{ display_title_ko(item.article) }}</span>
+                  <strong>
+                    <span class="lang-ko">{{ item.priority.label_ko }}</span>
+                    <span class="lang-en" style="display:none;">{{ item.priority.label_en }}</span>
+                  </strong>
+                  <span>
+                    <span class="lang-ko">{{ display_title_ko(item.article) }}</span>
+                    <span class="lang-en" style="display:none;">{{ display_title_en(item.article) }}</span>
+                  </span>
                 </a>
               {% endfor %}
             </div>
@@ -130,17 +201,29 @@
             <summary class="warning-summary">
               <span class="warning-icon"><i data-lucide="triangle-alert"></i></span>
               <span class="warning-copy">
-                <strong>수집 참고</strong>
-                <span>일부 외부 피드를 연결하지 못했습니다. 저장된 기사와 공식 참고 링크로 이슈를 구성했습니다.</span>
+                <strong>
+                  <span class="lang-ko">수집 참고</span>
+                  <span class="lang-en" style="display:none;">Collection Note</span>
+                </strong>
+                <span>
+                  <span class="lang-ko">일부 외부 피드를 연결하지 못했습니다. 저장된 기사와 공식 참고 링크로 이슈를 구성했습니다.</span>
+                  <span class="lang-en" style="display:none;">Some external feeds failed to connect. The issue is composed of saved articles and official reference links.</span>
+                </span>
               </span>
-              <span class="warning-count">{{ warning_items|length }}건</span>
+              <span class="warning-count">{{ warning_items|length }}<span class="lang-ko">건</span><span class="lang-en" style="display:none;"> items</span></span>
               <span class="warning-toggle">
-                <span>자세한 로그</span>
+                <span>
+                  <span class="lang-ko">자세한 로그</span>
+                  <span class="lang-en" style="display:none;">Detailed logs</span>
+                </span>
                 <i data-lucide="chevron-down"></i>
               </span>
             </summary>
             <div class="warning-details">
-              <p>대부분 인터넷 연결, DNS, VPN/프록시, 회사 방화벽, 또는 해당 사이트의 일시적인 차단 때문에 발생합니다.</p>
+              <p>
+                <span class="lang-ko">대부분 인터넷 연결, DNS, VPN/프록시, 회사 방화벽, 또는 해당 사이트의 일시적인 차단 때문에 발생합니다.</span>
+                <span class="lang-en" style="display:none;">This is mostly caused by internet connection, DNS, VPN/proxy, corporate firewalls, or temporary blocking by the target site.</span>
+              </p>
               <ul class="warning-log-list">
                 {% for warning in warning_items %}
                   <li>
@@ -159,7 +242,10 @@
         <section class="filter-panel" data-region-filter-panel aria-label="지역 필터">
           <div class="filter-panel__heading">
             <p class="eyebrow">Region</p>
-            <h3>지역 필터</h3>
+            <h3>
+              <span class="lang-ko">지역 필터</span>
+              <span class="lang-en" style="display:none;">Region Filter</span>
+            </h3>
           </div>
           <div class="region-filter" role="group" aria-label="지역 필터">
             {% for region in region_filter_options %}
@@ -169,7 +255,10 @@
                 data-region-filter="{{ region.key }}"
                 aria-pressed="{% if region.key == 'all' %}true{% else %}false{% endif %}"
               >
-                <span>{{ region.label_ko }}</span>
+                <span>
+                  <span class="lang-ko">{{ region.label_ko }}</span>
+                  <span class="lang-en" style="display:none;">{{ region.label_en }}</span>
+                </span>
                 <small>{{ region_counts[region.key] }}</small>
               </button>
             {% endfor %}
@@ -181,8 +270,11 @@
         {% for section in sections %}
           <section class="issue-section" id="{{ section.key }}">
             <div class="section-heading">
-              <h3>{{ section.label }}</h3>
-              <span data-section-count>{{ section.articles|length }}건</span>
+              <h3>
+                <span class="lang-ko">{{ section.label_ko }}</span>
+                <span class="lang-en" style="display:none;">{{ section.label_en }}</span>
+              </h3>
+              <span data-section-count>{{ section.articles|length }}<span class="lang-ko">건</span><span class="lang-en" style="display:none;"> items</span></span>
             </div>
             <div class="article-grid">
               {% for article in section.articles %}
@@ -196,16 +288,32 @@
                 >
                   <div class="article-card__top">
                     <span class="source-name">{{ article.source }}</span>
-                    <span class="priority-pill priority-pill--{{ priority.level }}">{{ priority.label_ko }} · {{ priority.score }}</span>
+                    <span class="priority-pill priority-pill--{{ priority.level }}">
+                      <span class="lang-ko">{{ priority.label_ko }}</span>
+                      <span class="lang-en" style="display:none;">{{ priority.label_en }}</span>
+                      · {{ priority.score }}
+                    </span>
                   </div>
                   <div class="region-tags">
                     {% for region in article_regions %}
-                      <span class="region-tag region-tag--{{ region.key }}">{{ region.label_ko }}</span>
+                      <span class="region-tag region-tag--{{ region.key }}">
+                        <span class="lang-ko">{{ region.label_ko }}</span>
+                        <span class="lang-en" style="display:none;">{{ region.label_en }}</span>
+                      </span>
                     {% endfor %}
                   </div>
-                  <h4>{{ display_title_ko(article) }}</h4>
-                  <p class="priority-reason">{{ priority.reason_ko }}</p>
-                  <p>{{ display_summary_ko(article) }}</p>
+                  <h4>
+                    <span class="lang-ko">{{ display_title_ko(article) }}</span>
+                    <span class="lang-en" style="display:none;">{{ display_title_en(article) }}</span>
+                  </h4>
+                  <p class="priority-reason">
+                    <span class="lang-ko">{{ priority.reason_ko }}</span>
+                    <span class="lang-en" style="display:none;">{{ priority.reason_en }}</span>
+                  </p>
+                  <p>
+                    <span class="lang-ko">{{ display_summary_ko(article) }}</span>
+                    <span class="lang-en" style="display:none;">{{ display_summary_en(article) }}</span>
+                  </p>
                   {% set user_tags = visible_tags(article) %}
                   {% if user_tags %}
                     <div class="tags">
@@ -217,31 +325,59 @@
                   {% if source_url %}
                     <a class="source-link" href="{{ source_url }}" target="_blank" rel="noreferrer">
                       <i data-lucide="external-link"></i>
-                      <span>원문 링크</span>
+                      <span>
+                        <span class="lang-ko">원문 링크</span>
+                        <span class="lang-en" style="display:none;">Original Link</span>
+                      </span>
                     </a>
                   {% else %}
                     <span class="source-link source-link--muted">
                       <i data-lucide="link-2-off"></i>
-                      <span>원문 확인 중</span>
+                      <span>
+                        <span class="lang-ko">원문 확인 중</span>
+                        <span class="lang-en" style="display:none;">Link Pending</span>
+                      </span>
                     </span>
                   {% endif %}
                 </article>
               {% else %}
-                <p class="empty-note">이번 이슈에는 해당 섹션 기사가 없습니다.</p>
+                <p class="empty-note">
+                  <span class="lang-ko">이번 이슈에는 해당 섹션 기사가 없습니다.</span>
+                  <span class="lang-en" style="display:none;">No articles in this section for this issue.</span>
+                </p>
               {% endfor %}
             </div>
           </section>
         {% endfor %}
       </section>
+    {% else %}
+      <section class="empty-state">
+        <i data-lucide="newspaper"></i>
+        <h2>
+          <span class="lang-ko">오늘의 자동차 뉴스레터를 아직 만들지 않았습니다.</span>
+          <span class="lang-en" style="display:none;">Today's automotive newsletter hasn't been created yet.</span>
+        </h2>
+        <p>
+          <span class="lang-ko">{{ today }} 이슈를 만들려면 왼쪽의 새로 수집 버튼을 누르세요.</span>
+          <span class="lang-en" style="display:none;">Click Collect News on the left to create the {{ today }} issue.</span>
+        </p>
+      </section>
+    {% endif %}
+    </section>
+
 
       <section class="settings-panel" data-view-panel="settings" hidden>
         <div class="settings-panel__header">
           <div>
             <p class="eyebrow">SMTP</p>
-            <h3>메일 설정</h3>
+            <h3>
+              <span class="lang-ko">메일 설정</span>
+              <span class="lang-en" style="display:none;">Mail Settings</span>
+            </h3>
           </div>
           <span class="password-state" data-password-state>
-            {% if mail_settings.smtp_password_saved %}비밀번호 저장됨{% else %}비밀번호 미저장{% endif %}
+            <span class="lang-ko">{% if mail_settings.smtp_password_saved %}비밀번호 저장됨{% else %}비밀번호 미저장{% endif %}</span>
+            <span class="lang-en" style="display:none;">{% if mail_settings.smtp_password_saved %}Password Saved{% else %}Password Not Saved{% endif %}</span>
           </span>
         </div>
         <form class="settings-form" data-mail-settings-form>
@@ -262,20 +398,32 @@
             <input name="smtp_password" type="password" placeholder="{% if mail_settings.smtp_password_saved %}비워두면 기존 값 유지{% else %}비밀번호 또는 앱 비밀번호{% endif %}">
           </label>
           <label class="field">
-            <span>보내는 사람</span>
+            <span>
+              <span class="lang-ko">보내는 사람</span>
+              <span class="lang-en" style="display:none;">Sender</span>
+            </span>
             <input name="smtp_from" type="email" value="{{ mail_settings.smtp_from }}" placeholder="sender@example.com" required>
           </label>
           <label class="field">
-            <span>받는 사람</span>
+            <span>
+              <span class="lang-ko">받는 사람</span>
+              <span class="lang-en" style="display:none;">Recipient</span>
+            </span>
             <input name="newsletter_to" value="{{ mail_settings.newsletter_to }}" placeholder="reader@example.com, team@example.com" required>
           </label>
           <label class="check-field">
             <input name="smtp_tls" type="checkbox" {% if mail_settings.smtp_tls %}checked{% endif %}>
-            <span>TLS 사용</span>
+            <span>
+              <span class="lang-ko">TLS 사용</span>
+              <span class="lang-en" style="display:none;">Use TLS</span>
+            </span>
           </label>
           <button type="submit" class="save-settings-action">
             <i data-lucide="save"></i>
-            <span>설정 저장</span>
+            <span>
+              <span class="lang-ko">설정 저장</span>
+              <span class="lang-en" style="display:none;">Save Settings</span>
+            </span>
           </button>
         </form>
       </section>
@@ -284,25 +432,25 @@
         <div class="settings-panel__header">
           <div>
             <p class="eyebrow">Feeds</p>
-            <h3>외부 소스 상태</h3>
+            <h3>
+              <span class="lang-ko">외부 소스 상태</span>
+              <span class="lang-en" style="display:none;">External Source Health</span>
+            </h3>
           </div>
           <button type="button" class="save-settings-action" data-source-health-action>
             <i data-lucide="refresh-cw"></i>
-            <span>상태 확인</span>
+            <span>
+              <span class="lang-ko">상태 확인</span>
+              <span class="lang-en" style="display:none;">Check Health</span>
+            </span>
           </button>
         </div>
         <div class="source-health-summary" data-source-health-summary>
-          상태 확인을 누르면 각 외부 피드의 응답과 기사 수를 확인합니다.
+          <span class="lang-ko">상태 확인을 누르면 각 외부 피드의 응답과 기사 수를 확인합니다.</span>
+          <span class="lang-en" style="display:none;">Click Check Health to see the status and article counts of external feeds.</span>
         </div>
         <div class="source-health-list" data-source-health-list></div>
       </section>
-    {% else %}
-      <section class="empty-state">
-        <i data-lucide="newspaper"></i>
-        <h2>오늘의 자동차 뉴스레터를 아직 만들지 않았습니다.</h2>
-        <p>{{ today }} 이슈를 만들려면 왼쪽의 새로 수집 버튼을 누르세요.</p>
-      </section>
-    {% endif %}
   </main>
 </div>
 {% endblock %}
