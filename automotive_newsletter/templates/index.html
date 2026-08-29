@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="app-shell">
+  <aside class="history-rail">
+    <div class="brand">
+      <span class="brand-mark">AN</span>
+      <div>
+        <h1>Automotive 뉴스레터</h1>
+        <p>OEM · Tier 1 · SDV · 컨퍼런스</p>
+      </div>
+    </div>
+    <form class="collect-form" data-collect-form>
+      <button type="submit" class="primary-action">
+        <i data-lucide="refresh-cw"></i>
+        <span>새로 수집</span>
+      </button>
+    </form>
+    <nav class="history-list" aria-label="히스토리">
+      <div class="rail-label">히스토리</div>
+      {% for issue_date, count in history %}
+        <a class="history-item {% if issue and issue.issue_date == issue_date %}active{% endif %}" href="/issues/{{ issue_date }}">
+          <span>{{ issue_date }}</span>
+          <small>{{ count }}건</small>
+        </a>
+      {% else %}
+        <p class="empty-note">아직 저장된 이슈가 없습니다.</p>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <main class="issue-workspace">
+    {% if issue %}
+      <header class="issue-header">
+        <div>
+          <p class="eyebrow">{{ issue.issue_date }}</p>
+          <h2>Automotive Intelligence Brief</h2>
+          <p class="subtitle">이슈가 될 큰 뉴스와 SDV 흐름을 우선순위로 정리했습니다.</p>
+        </div>
+        <form data-send-form data-issue-date="{{ issue.issue_date }}">
+          <button type="submit" class="send-action">
+            <i data-lucide="send"></i>
+            <span>메일 발송</span>
+          </button>
+        </form>
+      </header>
+
+      <section class="issue-metrics" aria-label="Executive Snapshot">
+        <div class="metrics-heading">
+          <p class="eyebrow">Executive Snapshot</p>
+          <h3>오늘의 핵심 브리핑</h3>
+        </div>
+        <div class="metric-grid">
+          <div class="metric-card">
+            <span class="metric-icon metric-icon--total"><i data-lucide="newspaper"></i></span>
+            <div>
+              <strong>{{ issue_metrics.total }}</strong>
+              <span>총 브리핑</span>
+            </div>
+          </div>
+          <div class="metric-card">
+            <span class="metric-icon metric-icon--critical"><i data-lucide="siren"></i></span>
+            <div>
+              <strong>{{ issue_metrics.critical }}</strong>
+              <span>최우선 뉴스</span>
+            </div>
+          </div>
+          <div class="metric-card">
+            <span class="metric-icon metric-icon--high"><i data-lucide="trending-up"></i></span>
+            <div>
+              <strong>{{ issue_metrics.high }}</strong>
+              <span>높음</span>
+            </div>
+          </div>
+          <div class="metric-card">
+            <span class="metric-icon metric-icon--conference"><i data-lucide="calendar-days"></i></span>
+            <div>
+              <strong>{{ issue_metrics.conference }}</strong>
+              <span>예정 컨퍼런스</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="status-line" data-status></div>
+
+      <nav class="view-tabs" aria-label="화면 탭">
+        <button type="button" class="view-tab active" data-view-tab="news" aria-pressed="true">
+          <i data-lucide="newspaper"></i>
+          <span>뉴스</span>
+        </button>
+        <button type="button" class="view-tab" data-view-tab="settings" aria-pressed="false">
+          <i data-lucide="settings"></i>
+          <span>메일 설정</span>
+        </button>
+        <button type="button" class="view-tab" data-view-tab="sources" aria-pressed="false">
+          <i data-lucide="activity"></i>
+          <span>소스 상태</span>
+        </button>
+      </nav>
+
+      <section data-view-panel="news">
+        {% if priority_summary %}
+          <section class="priority-radar" aria-label="Priority Radar">
+            <div class="priority-radar__header">
+              <div>
+                <p class="eyebrow">Priority Radar</p>
+                <h3>이슈화 우선순위</h3>
+              </div>
+              <div class="priority-counts">
+                <span class="priority-count priority-count--critical">최우선 {{ priority_summary.counts.critical }}</span>
+                <span class="priority-count priority-count--high">높음 {{ priority_summary.counts.high }}</span>
+                <span class="priority-count priority-count--medium">보통 {{ priority_summary.counts.medium }}</span>
+                <span class="priority-count priority-count--watch">관찰 {{ priority_summary.counts.watch }}</span>
+              </div>
+            </div>
+            <div class="priority-topline">
+              {% for item in priority_summary.top_items[:3] %}
+                {% set item_url = display_url(item.article) %}
+                <a class="priority-topline__item priority-topline__item--{{ item.priority.level }}" {% if item_url %}href="{{ item_url }}" target="_blank" rel="noreferrer"{% else %}href="#{{ item.article.category }}"{% endif %}>
+                  <strong>{{ item.priority.label_ko }}</strong>
+                  <span>{{ display_title_ko(item.article) }}</span>
+                </a>
+              {% endfor %}
+            </div>
+          </section>
+        {% endif %}
+
+        {% if warning_items %}
+          <details class="warning-band">
+            <summary class="warning-summary">
+              <span class="warning-icon"><i data-lucide="triangle-alert"></i></span>
+              <span class="warning-copy">
+                <strong>수집 참고</strong>
+                <span>일부 외부 피드를 연결하지 못했습니다. 저장된 기사와 공식 참고 링크로 이슈를 구성했습니다.</span>
+              </span>
+              <span class="warning-count">{{ warning_items|length }}건</span>
+              <span class="warning-toggle">
+                <span>자세한 로그</span>
+                <i data-lucide="chevron-down"></i>
+              </span>
+            </summary>
+            <div class="warning-details">
+              <p>대부분 인터넷 연결, DNS, VPN/프록시, 회사 방화벽, 또는 해당 사이트의 일시적인 차단 때문에 발생합니다.</p>
+              <ul class="warning-log-list">
+                {% for warning in warning_items %}
+                  <li>
+                    <div class="warning-log-heading">
+                      <strong>{{ warning.source }}</strong>
+                      <span>{{ warning.summary }}</span>
+                    </div>
+                    <code>{{ warning.detail }}</code>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </details>
+        {% endif %}
+
+        <section class="filter-panel" data-region-filter-panel aria-label="지역 필터">
+          <div class="filter-panel__heading">
+            <p class="eyebrow">Region</p>
+            <h3>지역 필터</h3>
+          </div>
+          <div class="region-filter" role="group" aria-label="지역 필터">
+            {% for region in region_filter_options %}
+              <button
+                type="button"
+                class="region-filter__button {% if region.key == 'all' %}active{% endif %}"
+                data-region-filter="{{ region.key }}"
+                aria-pressed="{% if region.key == 'all' %}true{% else %}false{% endif %}"
+              >
+                <span>{{ region.label_ko }}</span>
+                <small>{{ region_counts[region.key] }}</small>
+              </button>
+            {% endfor %}
+          </div>
+        </section>
+
+        <p class="empty-note filter-empty" data-filter-empty hidden>선택한 지역 뉴스가 없습니다.</p>
+
+        {% for section in sections %}
+          <section class="issue-section" id="{{ section.key }}">
+            <div class="section-heading">
+              <h3>{{ section.label }}</h3>
+              <span data-section-count>{{ section.articles|length }}건</span>
+            </div>
+            <div class="article-grid">
+              {% for article in section.articles %}
+                {% set priority = assess_priority(article) %}
+                {% set source_url = display_url(article) %}
+                {% set article_regions = regions_for_article(article) %}
+                <article
+                  class="article-card article-card--{{ priority.level }}"
+                  data-priority="{{ priority.level }}"
+                  data-regions="{% for region in article_regions %}{{ region.key }}{% if not loop.last %} {% endif %}{% endfor %}"
+                >
+                  <div class="article-card__top">
+                    <span class="source-name">{{ article.source }}</span>
+                    <span class="priority-pill priority-pill--{{ priority.level }}">{{ priority.label_ko }} · {{ priority.score }}</span>
+                  </div>
+                  <div class="region-tags">
+                    {% for region in article_regions %}
+                      <span class="region-tag region-tag--{{ region.key }}">{{ region.label_ko }}</span>
+                    {% endfor %}
+                  </div>
+                  <h4>{{ display_title_ko(article) }}</h4>
+                  <p class="priority-reason">{{ priority.reason_ko }}</p>
+                  <p>{{ display_summary_ko(article) }}</p>
+                  {% set user_tags = visible_tags(article) %}
+                  {% if user_tags %}
+                    <div class="tags">
+                      {% for tag in user_tags %}
+                        <span>{{ tag }}</span>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                  {% if source_url %}
+                    <a class="source-link" href="{{ source_url }}" target="_blank" rel="noreferrer">
+                      <i data-lucide="external-link"></i>
+                      <span>원문 링크</span>
+                    </a>
+                  {% else %}
+                    <span class="source-link source-link--muted">
+                      <i data-lucide="link-2-off"></i>
+                      <span>원문 확인 중</span>
+                    </span>
+                  {% endif %}
+                </article>
+              {% else %}
+                <p class="empty-note">이번 이슈에는 해당 섹션 기사가 없습니다.</p>
+              {% endfor %}
+            </div>
+          </section>
+        {% endfor %}
+      </section>
+
+      <section class="settings-panel" data-view-panel="settings" hidden>
+        <div class="settings-panel__header">
+          <div>
+            <p class="eyebrow">SMTP</p>
+            <h3>메일 설정</h3>
+          </div>
+          <span class="password-state" data-password-state>
+            {% if mail_settings.smtp_password_saved %}비밀번호 저장됨{% else %}비밀번호 미저장{% endif %}
+          </span>
+        </div>
+        <form class="settings-form" data-mail-settings-form>
+          <label class="field">
+            <span>SMTP Host</span>
+            <input name="smtp_host" value="{{ mail_settings.smtp_host }}" placeholder="smtp.example.com" required>
+          </label>
+          <label class="field">
+            <span>SMTP Port</span>
+            <input name="smtp_port" type="number" min="1" max="65535" value="{{ mail_settings.smtp_port }}" required>
+          </label>
+          <label class="field">
+            <span>SMTP User</span>
+            <input name="smtp_user" value="{{ mail_settings.smtp_user }}" placeholder="account@example.com">
+          </label>
+          <label class="field">
+            <span>SMTP Password</span>
+            <input name="smtp_password" type="password" placeholder="{% if mail_settings.smtp_password_saved %}비워두면 기존 값 유지{% else %}비밀번호 또는 앱 비밀번호{% endif %}">
+          </label>
+          <label class="field">
+            <span>보내는 사람</span>
+            <input name="smtp_from" type="email" value="{{ mail_settings.smtp_from }}" placeholder="sender@example.com" required>
+          </label>
+          <label class="field">
+            <span>받는 사람</span>
+            <input name="newsletter_to" value="{{ mail_settings.newsletter_to }}" placeholder="reader@example.com, team@example.com" required>
+          </label>
+          <label class="check-field">
+            <input name="smtp_tls" type="checkbox" {% if mail_settings.smtp_tls %}checked{% endif %}>
+            <span>TLS 사용</span>
+          </label>
+          <button type="submit" class="save-settings-action">
+            <i data-lucide="save"></i>
+            <span>설정 저장</span>
+          </button>
+        </form>
+      </section>
+
+      <section class="settings-panel source-health-panel" data-view-panel="sources" hidden>
+        <div class="settings-panel__header">
+          <div>
+            <p class="eyebrow">Feeds</p>
+            <h3>외부 소스 상태</h3>
+          </div>
+          <button type="button" class="save-settings-action" data-source-health-action>
+            <i data-lucide="refresh-cw"></i>
+            <span>상태 확인</span>
+          </button>
+        </div>
+        <div class="source-health-summary" data-source-health-summary>
+          상태 확인을 누르면 각 외부 피드의 응답과 기사 수를 확인합니다.
+        </div>
+        <div class="source-health-list" data-source-health-list></div>
+      </section>
+    {% else %}
+      <section class="empty-state">
+        <i data-lucide="newspaper"></i>
+        <h2>오늘의 자동차 뉴스레터를 아직 만들지 않았습니다.</h2>
+        <p>{{ today }} 이슈를 만들려면 왼쪽의 새로 수집 버튼을 누르세요.</p>
+      </section>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}

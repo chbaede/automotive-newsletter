@@ -1,0 +1,744 @@
+from __future__ import annotations
+
+import re
+import time
+from dataclasses import replace
+from datetime import date, datetime, time as datetime_time, timezone
+from email.utils import parsedate_to_datetime
+from html import unescape
+from typing import Iterable
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+import feedparser
+import httpx
+from bs4 import BeautifulSoup
+
+from .config import Settings, load_settings
+from .models import Article, FeedEntry, NewsletterIssue
+from .sources import DEFAULT_FEEDS, SECTION_ORDER, SourceFeed
+from .store import NewsletterStore
+from .summarizer import classify_article
+
+TRACKING_PARAMS = {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id"}
+REQUEST_HEADERS = {"User-Agent": "AutomotiveNewsletter/0.1 (+local research app)"}
+
+
+def collect_from_entries(entries: Iterable[FeedEntry]) -> tuple[list[Article], list[str]]:
+    articles: list[Article] = []
+    seen_urls: set[str] = set()
+    seen_titles: set[str] = set()
+
+    for entry in entries:
+        canonical_url = canonicalize_url(entry.url)
+        title_key = normalize_title(entry.title)
+        if not canonical_url or not title_key:
+            continue
+        if canonical_url in seen_urls or title_key in seen_titles:
+            continue
+        seen_urls.add(canonical_url)
+        seen_titles.add(title_key)
+        article = Article(
+            title=clean_text(entry.title, 240),
+            url=canonical_url,
+            source=clean_text(entry.source, 80) or "Unknown",
+            category=entry.bucket,
+            published_at=entry.published_at,
+            excerpt=clean_text(entry.excerpt, 420),
+        )
+        articles.append(classify_article(article))
+
+    articles.sort(
+        key=lambda article: (
+            article.score,
+            article.published_at.timestamp() if article.published_at else 0,
+        ),
+        reverse=True,
+    )
+    return articles, []
+
+
+def build_issue_articles(entries: Iterable[FeedEntry] | Iterable[Article], per_section: int = 5) -> list[Article]:
+    entry_list = list(entries)
+    if not entry_list:
+        return []
+    if isinstance(entry_list[0], FeedEntry):
+        articles, _warnings = collect_from_entries(entry_list)  # type: ignore[arg-type]
+    else:
+        articles = [classify_article(article) for article in entry_list]  # type: ignore[arg-type]
+
+    selected: list[Article] = []
+    for section in SECTION_ORDER:
+        section_articles = [article for article in articles if article.category == section]
+        direct_section_articles = [
+            article for article in section_articles if not is_intermediary_url(article.url)
+        ]
+        if direct_section_articles:
+            section_articles = direct_section_articles
+        selected.extend(section_articles[:per_section])
+    if not selected:
+        selected = articles[: per_section * len(SECTION_ORDER)]
+    return selected
+
+
+def collect_and_store(
+    store: NewsletterStore | None = None,
+    settings: Settings | None = None,
+    issue_date: str | None = None,
+    feeds: list[SourceFeed] | None = None,
+) -> NewsletterIssue:
+    settings = settings or load_settings()
+    store = store or NewsletterStore(settings.db_path)
+    issue_date = issue_date or date.today().isoformat()
+    entries, warnings = fetch_feed_entries(feeds or DEFAULT_FEEDS, settings=settings)
+    articles = build_issue_articles(entries)
+    articles = ensure_required_fallbacks(articles, issue_date=issue_date)
+    if not articles and warnings:
+        warnings = [*warnings, "수집된 기사가 없어 빈 이슈를 저장했습니다."]
+    return store.save_issue(issue_date, articles, warnings=warnings)
+
+
+def ensure_required_fallbacks(
+    articles: list[Article], issue_date: str | date | None = None
+) -> list[Article]:
+    on_date = _coerce_date(issue_date)
+    enriched = list(articles)
+    if not any(
+        article.category == "tier1" and not is_intermediary_url(article.url) for article in enriched
+    ):
+        enriched.extend(supplier_fallback_articles())
+    if not any(
+        article.category == "institution" and not is_intermediary_url(article.url)
+        for article in enriched
+    ):
+        enriched.extend(institution_fallback_articles())
+    if not any(
+        article.category == "conference" and not is_intermediary_url(article.url)
+        for article in enriched
+    ):
+        enriched.extend(conference_fallback_articles(on_date=on_date))
+    else:
+        enriched.extend(conference_fallback_articles(on_date=on_date))
+    return remove_intermediary_articles(dedupe_articles(enriched))
+
+
+def supplier_fallback_articles() -> list[Article]:
+    suppliers = [
+        (
+            "Bosch: software-defined vehicle 심층 페이지",
+            "https://www.bosch-mobility.com/en/mobility-topics/software-defined-vehicle",
+            "Bosch Mobility의 SDV 정의, E/E 아키텍처 전환, OTA 기반 기능 확장 관점을 확인할 수 있습니다.",
+            ["Bosch", "ADAS", "SDV"],
+        ),
+        (
+            "Continental: 차량-클라우드 SDV 생태계 보도자료",
+            "https://www.continental.com/en/press/press-releases/20230614-continental-techshow-topicfield/",
+            "Continental의 Software-Defined Vehicle, 고성능 컴퓨터, 클라우드 개발 환경, 사이버보안 전략을 다룬 보도자료입니다.",
+            ["Continental", "SDV"],
+        ),
+        (
+            "Valeo SDV 공식 인사이트",
+            "https://www.valeo.com/en/everything-you-need-to-know-about-the-software-defined-vehicle-sdv/",
+            "Valeo의 Software Defined Vehicle 정의, 시장 과제, Tier 1 관점의 기술 포지션을 확인할 수 있습니다.",
+            ["Valeo", "SDV"],
+        ),
+        (
+            "Magna-NVIDIA: DRIVE Hyperion 통합 서비스 보도자료",
+            "https://www.magna.com/stories/news-press-release/2026/magna-to-offer-drive-hyperion-compatible-ecus-and-tier-1-integration-services-for-nvidia-drive-av",
+            "Magna와 NVIDIA의 DRIVE AV, Hyperion 호환 ECU, Tier 1 시스템 통합 서비스 발표를 확인할 수 있습니다.",
+            ["Magna", "ADAS", "SDV"],
+        ),
+        (
+            "ZF CES 2026 SDV 섀시 보도자료",
+            "https://press.zf.com/press/en/releases/release_97988.html",
+            "ZF의 AI Road Sense, 능동 소음 저감, 소프트웨어 기반 섀시 전략을 확인할 수 있습니다.",
+            ["ZF", "SDV"],
+        ),
+    ]
+    return [
+        Article(
+            title=title,
+            url=url,
+            source="공식 뉴스룸",
+            category="tier1",
+            summary_ko=summary,
+            tags=tags,
+            score=34 - index,
+        )
+        for index, (title, url, summary, tags) in enumerate(suppliers)
+    ]
+
+
+def institution_fallback_articles() -> list[Article]:
+    institutions = [
+        (
+            "Cox Automotive: 2026 미국 신차 판매 전망",
+            "https://www.coxautoinc.com/insights-hub/cox-automotive-2026-outlook/",
+            "Cox Automotive의 2026년 미국 자동차 시장 전망, 수요 양극화, 금리·가격 영향을 다룬 인사이트입니다.",
+            ["Cox Automotive"],
+        ),
+        (
+            "J.D. Power: 2026 미국 차량 내구품질 조사",
+            "https://www.jdpower.com/pr-id/2026133",
+            "OTA와 인포테인먼트 문제가 장기 품질 인식에 미치는 영향을 다룬 J.D. Power 2026 VDS 보도자료입니다.",
+            ["J.D. Power", "OTA"],
+        ),
+        (
+            "S&P Global Mobility: 2025 자동차 충성도 어워즈",
+            "https://press.spglobal.com/2026-01-14-S-P-Global-Mobility-2025-Loyalty-Awards-Reveal-Divergent-Paths-to-Customer-Retention-General-Motors-and-Tesla-Secure-Top-Honors",
+            "S&P Global Mobility가 GM과 Tesla의 고객 유지 성과를 포함해 브랜드 충성도 흐름을 분석한 공식 보도자료입니다.",
+            ["S&P Global Mobility", "GM", "Tesla"],
+        ),
+        (
+            "SAE: SDV 아키텍처 기술 논문",
+            "https://saemobilus.sae.org/papers/software-defined-vehicles-architecting-future-intelligent-connected-mobility-2026-26-0691",
+            "SAE Mobilus의 Software-Defined Vehicle 아키텍처, SOA, AUTOSAR, OTA, AI 적용 기술 논문입니다.",
+            ["SAE", "SDV"],
+        ),
+        (
+            "WardsAuto: 데이터 준비형 차량과 SDV 분석",
+            "https://www.wardsauto.com/spons/the-drive-for-data-ready-vehicles-is-accelerating-smarter-mobility/804696/",
+            "WardsAuto의 SDV 데이터 오케스트레이션, 품질 데이터, 개발 피드백 루프 관련 분석 글입니다.",
+            ["WardsAuto", "SDV"],
+        ),
+    ]
+    return [
+        Article(
+            title=title,
+            url=url,
+            source="기관/매거진",
+            category="institution",
+            summary_ko=summary,
+            tags=tags,
+            score=32 - index,
+        )
+        for index, (title, url, summary, tags) in enumerate(institutions)
+    ]
+
+
+def conference_fallback_articles(on_date: str | date | None = None) -> list[Article]:
+    on_date = _coerce_date(on_date)
+    events = [
+        (
+            "2026 CES",
+            "2026-01-06",
+            "2026-01-09",
+            "Las Vegas",
+            "https://www.ces.tech/",
+            "CES 2026의 차량 기술, AI, 모빌리티 발표를 확인할 수 있습니다.",
+            ["CES", "2026", "종료"],
+        ),
+        (
+            "2026 Detroit Auto Show",
+            "2026-01-14",
+            "2026-01-25",
+            "Detroit",
+            "https://detroitautoshow.com/",
+            "Detroit Auto Show의 OEM 참가, 미디어 데이, 북미 시장 발표를 확인할 수 있습니다.",
+            ["Detroit Auto Show", "OEM", "2026", "종료"],
+        ),
+        (
+            "Automotive World Tokyo 2026",
+            "2026-01-21",
+            "2026-01-23",
+            "Tokyo Big Sight",
+            "https://www.automotiveworld.jp/tokyo/en-gb.html",
+            "Automotive World Tokyo의 SDV, 전동화, 전장, 자율주행 전시 정보를 볼 수 있습니다.",
+            ["Automotive World Tokyo", "SDV", "EV", "2026", "종료"],
+        ),
+        (
+            "Automotive Computing Conference USA",
+            "2026-03-24",
+            "2026-03-25",
+            "Dearborn/Detroit",
+            "https://www.automotive-computing-usa.com/",
+            "차량 컴퓨팅, 칩렛, 가상 ECU, SDV 아키텍처 중심의 전문 컨퍼런스입니다.",
+            ["SDV", "AI", "2026", "종료"],
+        ),
+        (
+            "SAE WCX 2026",
+            "2026-04-14",
+            "2026-04-16",
+            "Detroit",
+            "https://www.sae.org/attend/wcx",
+            "SAE WCX의 기술 세션, 규제, 안전, 전동화, 차량 엔지니어링 아젠다를 확인할 수 있습니다.",
+            ["SAE WCX", "SAE", "SDV", "2026", "종료"],
+        ),
+        (
+            "Auto China 2026",
+            "2026-04-24",
+            "2026-05-03",
+            "Beijing",
+            "https://www.autobeijing.org.cn/en/index.html",
+            "중국 OEM, EV, 배터리, SDV 신차 발표와 글로벌 경쟁 구도를 확인할 수 있습니다.",
+            ["Auto China", "OEM", "EV", "2026", "종료"],
+        ),
+        (
+            "AutoTech Detroit 2026",
+            "2026-06-02",
+            "2026-06-04",
+            "Novi",
+            "https://attend.techevents.informaconnect.com/event/autotech-2026",
+            "커넥티드카 수익화, SDV, 사이버보안, UX, ADAS 세션을 다루는 북미 자동차 기술 행사입니다.",
+            ["AutoTech", "SDV", "ADAS", "2026", "종료"],
+        ),
+        (
+            "The Battery Show Europe 2026",
+            "2026-06-09",
+            "2026-06-11",
+            "Stuttgart",
+            "https://www.thebatteryshow.eu/",
+            "배터리 제조, 셀·팩 기술, 전기·하이브리드차 공급망을 확인할 수 있는 유럽 주요 행사입니다.",
+            ["Battery", "EV", "2026", "예정"],
+        ),
+        (
+            "Autonomous Vehicle Technology Expo Europe",
+            "2026-06-23",
+            "2026-06-25",
+            "Stuttgart",
+            "https://www.autonomousvehicletechnologyexpo.com/",
+            "ADAS, 자율주행, 테스트, 센서, 시뮬레이션 기술을 확인할 수 있는 Vehicle Tech Week 행사입니다.",
+            ["ADAS", "Autonomous", "2026", "예정"],
+        ),
+        (
+            "SDV USA 2026",
+            "2026-06-29",
+            "2026-06-30",
+            "San Francisco",
+            "https://www.software-defined-vehicles-conference.us/",
+            "Software-Defined Vehicle 전략, AI, 안전, 소프트웨어 아키텍처를 다루는 SDV 전문 행사입니다.",
+            ["SDV", "AI", "2026", "예정"],
+        ),
+        (
+            "Reuters Automotive Europe 2026",
+            "2026-06-29",
+            "2026-06-30",
+            "Frankfurt",
+            "https://www.reutersprofessional.com/reuters-events?event=automotive-europe",
+            "유럽 OEM 전략, 전동화, 공급망, 소프트웨어 전환을 다루는 Reuters 자동차 컨퍼런스입니다.",
+            ["Reuters", "OEM", "EV", "SDV", "2026", "예정"],
+        ),
+        (
+            "Automotive World Tokyo 2026 Autumn",
+            "2026-09-09",
+            "2026-09-11",
+            "Makuhari Messe",
+            "https://www.automotiveworld.jp/autumn/en-gb.html",
+            "일본 9월 Automotive World의 SDV, EV, 자율주행, 제조 기술 전시 일정입니다.",
+            ["Automotive World Tokyo", "SDV", "EV", "2026", "예정"],
+        ),
+        (
+            "IAA Transportation 2026",
+            "2026-09-15",
+            "2026-09-20",
+            "Hannover",
+            "https://www.iaa-transportation.com/en",
+            "상용차, 물류, 전동화, 버스, 운송 플랫폼 중심의 글로벌 전시입니다.",
+            ["IAA Transportation", "EV", "2026", "예정"],
+        ),
+        (
+            "Automotive Technology Show 2026",
+            "2026-09-29",
+            "2026-09-30",
+            "Sinsheim",
+            "https://www.automotivetechnology.org/",
+            "ADAS, 자율주행, SDV, 커넥티비티, 사이버보안 개발자를 위한 기술 쇼입니다.",
+            ["SDV", "ADAS", "2026", "예정"],
+        ),
+        (
+            "AGL All Member Meeting",
+            "2026-09-30",
+            "2026-10-01",
+            "Berlin",
+            "https://www.automotivelinux.org/",
+            "Automotive Grade Linux와 SoDeV 기반 오픈소스 SDV 플랫폼 논의를 추적할 수 있습니다.",
+            ["AGL", "SDV", "2026", "예정"],
+        ),
+        (
+            "Japan Mobility Show Bizweek 2026",
+            "2026-10-13",
+            "2026-10-16",
+            "Makuhari Messe",
+            "https://www.japan-mobility-show.com/en/",
+            "JAMA가 주관하는 일본 모빌리티 비즈니스 전시로, 이종 산업 협업과 모빌리티 전략을 확인할 수 있습니다.",
+            ["Japan Mobility Show", "OEM", "2026", "예정"],
+        ),
+        (
+            "Paris Motor Show 2026",
+            "2026-10-12",
+            "2026-10-18",
+            "Paris",
+            "https://mondial.paris/en",
+            "유럽 OEM, 전동화, 신차 발표 흐름을 볼 수 있는 주요 국제 모터쇼입니다.",
+            ["Paris Motor Show", "OEM", "EV", "2026", "예정"],
+        ),
+        (
+            "Reuters Automotive USA 2026",
+            "2026-10-28",
+            "2026-10-29",
+            "Detroit",
+            "https://www.reutersprofessional.com/reuters-events?event=automotive-usa",
+            "북미 OEM 리더십, SDV, 전동화, 커넥티드카, 공급망 전략을 다루는 Reuters 행사입니다.",
+            ["Reuters", "OEM", "SDV", "2026", "예정"],
+        ),
+        (
+            "Automotive World Nagoya 2026",
+            "2026-11-25",
+            "2026-11-27",
+            "Aichi Sky Expo",
+            "https://www.automotiveworld.jp/nagoya/en-gb.html",
+            "일본 중부 자동차 산업권의 SDV, 전장, EV/HV/FCV 기술 전시입니다.",
+            ["Automotive World Nagoya", "SDV", "EV", "2026", "예정"],
+        ),
+    ]
+    articles = []
+    for index, (name, starts_on, ends_on, location, url, summary, tags) in enumerate(events):
+        start_date = date.fromisoformat(starts_on)
+        end_date = date.fromisoformat(ends_on)
+        if end_date < on_date:
+            continue
+        status_tag = "예정" if start_date >= on_date else "진행중"
+        display_tags = [tag for tag in tags if tag not in {"종료", "예정"}]
+        articles.append(
+            Article(
+                title=f"{name} | {_format_event_date_range(start_date, end_date)} · {location}",
+                url=url,
+                source="공식 사이트",
+                category="conference",
+                published_at=datetime.combine(start_date, datetime_time.min, tzinfo=timezone.utc),
+                summary_ko=summary,
+                tags=[
+                    *display_tags,
+                    status_tag,
+                    f"event_start:{starts_on}",
+                    f"event_end:{ends_on}",
+                ],
+                score=_conference_score([*display_tags, status_tag], index),
+            )
+        )
+    return sorted(articles, key=lambda article: article.published_at or datetime.max.replace(tzinfo=timezone.utc))
+
+
+def remove_intermediary_articles(articles: list[Article]) -> list[Article]:
+    direct_articles = [article for article in articles if not is_intermediary_url(article.url)]
+    return direct_articles if direct_articles else articles
+
+
+def dedupe_articles(articles: list[Article]) -> list[Article]:
+    deduped: list[Article] = []
+    seen: set[tuple[str, str]] = set()
+    for article in articles:
+        key = (article.category, canonicalize_url(article.url) or normalize_title(article.title))
+        title_key = (article.category, normalize_title(article.title))
+        if key in seen or title_key in seen:
+            continue
+        seen.add(key)
+        seen.add(title_key)
+        deduped.append(article)
+    return deduped
+
+
+def _conference_score(tags: list[str], index: int) -> float:
+    score = 48 - min(index, 12)
+    if "예정" in tags:
+        score += 10
+    if "SDV" in tags:
+        score += 6
+    if "ADAS" in tags:
+        score += 4
+    if "EV" in tags:
+        score += 3
+    return float(score)
+
+
+def _coerce_date(value: str | date | None) -> date:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        return date.fromisoformat(value)
+    return date.today()
+
+
+def _format_event_date_range(start: date, end: date) -> str:
+    if start == end:
+        return f"{start.year}년 {start.month}월 {start.day}일"
+    if start.year == end.year and start.month == end.month:
+        return f"{start.year}년 {start.month}월 {start.day}-{end.day}일"
+    if start.year == end.year:
+        return f"{start.year}년 {start.month}월 {start.day}일-{end.month}월 {end.day}일"
+    return f"{start.year}년 {start.month}월 {start.day}일-{end.year}년 {end.month}월 {end.day}일"
+
+
+def fetch_feed_entries(
+    feeds: Iterable[SourceFeed], settings: Settings | None = None
+) -> tuple[list[FeedEntry], list[str]]:
+    settings = settings or load_settings()
+    entries: list[FeedEntry] = []
+    warnings: list[str] = []
+    warned_tls_fallback = False
+    with _feed_client(settings, verify=settings.verify_tls) as client, _feed_client(
+        settings, verify=False
+    ) as insecure_client:
+        for feed in feeds:
+            try:
+                response, used_tls_fallback = _get_with_tls_fallback(
+                    feed.url,
+                    settings=settings,
+                    client=client,
+                    insecure_client=insecure_client,
+                )
+                if used_tls_fallback and not warned_tls_fallback:
+                    warnings.append("TLS 인증서 검증 실패로 일부 피드는 검증 없이 재시도했습니다.")
+                    warned_tls_fallback = True
+                response.raise_for_status()
+                parsed = feedparser.parse(response.content)
+            except Exception as exc:
+                warnings.append(f"{feed.name}: {exc}")
+                continue
+            if getattr(parsed, "bozo", False) and not parsed.entries:
+                warnings.append(f"{feed.name}: 피드 파싱 실패")
+                continue
+            for raw in parsed.entries[: settings.max_entries_per_feed]:
+                title = raw.get("title", "")
+                url = raw.get("link", "")
+                if not title or not url:
+                    continue
+                source = _entry_source(raw, feed)
+                excerpt = strip_html(raw.get("summary", "") or raw.get("description", ""))
+                published_at = _entry_date(raw)
+                resolved_url = (
+                    resolve_original_url(url, timeout=settings.request_timeout_seconds)
+                    if settings.resolve_news_links
+                    else url
+                )
+                if settings.fetch_article_excerpts and not excerpt:
+                    excerpt = fetch_article_excerpt(
+                        resolved_url, timeout=settings.request_timeout_seconds
+                    )
+                entries.append(
+                    FeedEntry(
+                        title=title,
+                        url=resolved_url,
+                        source=source,
+                        bucket=feed.bucket,
+                        published_at=published_at,
+                        excerpt=excerpt,
+                    )
+                )
+                time.sleep(0.02)
+    return entries, warnings
+
+
+def check_feed_health(
+    feeds: Iterable[SourceFeed] | None = None, settings: Settings | None = None
+) -> list[dict[str, object]]:
+    settings = settings or load_settings()
+    results: list[dict[str, object]] = []
+    with _feed_client(settings, verify=settings.verify_tls) as client, _feed_client(
+        settings, verify=False
+    ) as insecure_client:
+        for feed in feeds or DEFAULT_FEEDS:
+            result: dict[str, object] = {
+                "name": feed.name,
+                "bucket": feed.bucket,
+                "url": feed.url,
+                "ok": False,
+                "status_code": None,
+                "entries": 0,
+                "tls_fallback": False,
+                "error": "",
+            }
+            try:
+                response, used_tls_fallback = _get_with_tls_fallback(
+                    feed.url,
+                    settings=settings,
+                    client=client,
+                    insecure_client=insecure_client,
+                )
+                parsed = feedparser.parse(response.content)
+                entries = len(parsed.entries)
+                parse_failed = bool(getattr(parsed, "bozo", False) and not parsed.entries)
+                result.update(
+                    {
+                        "ok": response.status_code < 400 and not parse_failed,
+                        "status_code": response.status_code,
+                        "entries": entries,
+                        "tls_fallback": used_tls_fallback,
+                    }
+                )
+                if parse_failed:
+                    result["error"] = "피드 파싱 실패"
+            except Exception as exc:
+                result["error"] = str(exc)
+            results.append(result)
+    return results
+
+
+def resolve_original_url(url: str, timeout: float = 8.0) -> str:
+    consent_continue = _google_consent_continue(url)
+    if consent_continue:
+        if "news.google.com" in consent_continue:
+            return resolve_original_url(consent_continue, timeout=timeout)
+        return consent_continue
+    if "news.google.com" not in url:
+        return url
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True, verify=True) as client:
+            response = client.get(url, headers={"User-Agent": _user_agent()})
+        if response.url and not is_intermediary_url(str(response.url)):
+            return str(response.url)
+    except httpx.ConnectError as exc:
+        if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
+            return url
+        try:
+            with httpx.Client(timeout=timeout, follow_redirects=True, verify=False) as client:
+                response = client.get(url, headers={"User-Agent": _user_agent()})
+            if response.url and not is_intermediary_url(str(response.url)):
+                return str(response.url)
+        except httpx.HTTPError:
+            return url
+    except httpx.HTTPError:
+        return url
+    return url
+
+
+def _google_consent_continue(url: str) -> str:
+    parts = urlsplit(url)
+    host = parts.netloc.lower()
+    if not host.endswith("google.com"):
+        return ""
+    params = dict(parse_qsl(parts.query, keep_blank_values=True))
+    return params.get("continue", "")
+
+
+def fetch_article_excerpt(url: str, timeout: float = 8.0) -> str:
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            response = client.get(url, headers={"User-Agent": _user_agent()})
+        if response.status_code >= 400:
+            return ""
+    except httpx.HTTPError:
+        return ""
+    soup = BeautifulSoup(response.text, "html.parser")
+    for selector in [
+        'meta[name="description"]',
+        'meta[property="og:description"]',
+        'meta[name="twitter:description"]',
+    ]:
+        meta = soup.select_one(selector)
+        if meta and meta.get("content"):
+            return clean_text(meta["content"], 420)
+    paragraphs = [clean_text(p.get_text(" "), 240) for p in soup.find_all("p")]
+    paragraphs = [paragraph for paragraph in paragraphs if len(paragraph) > 60]
+    return clean_text(" ".join(paragraphs[:2]), 420)
+
+
+def canonicalize_url(url: str) -> str:
+    parts = urlsplit(unescape(url.strip()))
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key not in TRACKING_PARAMS and not key.startswith("utm_")
+    ]
+    return urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc.lower(),
+            parts.path.rstrip("/") or parts.path,
+            urlencode(query),
+            "",
+        )
+    )
+
+
+def is_intermediary_url(url: str) -> bool:
+    host = urlsplit(url).netloc.lower()
+    return host.endswith("google.com") or host.endswith("news.google.com")
+
+
+def normalize_title(title: str) -> str:
+    title = re.sub(r"\s+-\s+[^-]+$", "", title)
+    return re.sub(r"[^a-z0-9가-힣]+", "", title.lower())
+
+
+def strip_html(value: str) -> str:
+    if not value:
+        return ""
+    return clean_text(BeautifulSoup(value, "html.parser").get_text(" "), 420)
+
+
+def clean_text(value: str, limit: int = 240) -> str:
+    value = re.sub(r"\s+", " ", unescape(value or "")).strip()
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"
+
+
+def _entry_source(raw: object, feed: SourceFeed) -> str:
+    source = getattr(raw, "source", None)
+    if isinstance(source, dict) and source.get("title"):
+        return source["title"]
+    if hasattr(raw, "get"):
+        raw_source = raw.get("source", {})  # type: ignore[attr-defined]
+        if isinstance(raw_source, dict) and raw_source.get("title"):
+            return raw_source["title"]
+    return feed.name
+
+
+def _entry_date(raw: object) -> datetime | None:
+    if hasattr(raw, "get"):
+        published = raw.get("published") or raw.get("updated")  # type: ignore[attr-defined]
+        if published:
+            try:
+                parsed = parsedate_to_datetime(published)
+                if parsed.tzinfo is None:
+                    return parsed.replace(tzinfo=timezone.utc)
+                return parsed
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _user_agent() -> str:
+    return REQUEST_HEADERS["User-Agent"]
+
+
+def _feed_client(settings: Settings, verify: bool) -> httpx.Client:
+    return httpx.Client(
+        timeout=settings.request_timeout_seconds,
+        follow_redirects=True,
+        headers=REQUEST_HEADERS,
+        verify=verify,
+    )
+
+
+def _get_with_tls_fallback(
+    url: str,
+    settings: Settings,
+    client: httpx.Client | None = None,
+    insecure_client: httpx.Client | None = None,
+) -> tuple[httpx.Response, bool]:
+    active_client = client
+    close_active_client = False
+    if active_client is None:
+        active_client = _feed_client(settings, verify=settings.verify_tls)
+        close_active_client = True
+    try:
+        response = active_client.get(url)
+        return response, False
+    except httpx.ConnectError as exc:
+        if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
+            raise
+        fallback_client = insecure_client
+        close_fallback_client = False
+        if fallback_client is None:
+            fallback_client = _feed_client(settings, verify=False)
+            close_fallback_client = True
+        try:
+            response = fallback_client.get(url)
+        finally:
+            if close_fallback_client:
+                fallback_client.close()
+        return response, True
+    finally:
+        if close_active_client:
+            active_client.close()
