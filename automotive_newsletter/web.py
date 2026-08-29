@@ -17,7 +17,9 @@ from .models import NewsletterIssue
 from .presentation import (
     REGION_FILTERS,
     display_summary_ko,
+    display_summary_en,
     display_title_ko,
+    display_title_en,
     display_url,
     region_counts,
     regions_for_article,
@@ -25,7 +27,7 @@ from .presentation import (
     visible_tags,
 )
 from .priority import assess_priority, priority_summary
-from .sources import SECTION_LABELS, SECTION_ORDER
+from .sources import SECTION_LABELS, SECTION_LABELS_EN, SECTION_ORDER
 from .store import NewsletterStore
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -58,12 +60,12 @@ def create_app(store: NewsletterStore | None = None, settings: Settings | None =
         return JSONResponse({"ok": True, "issue_date": issue.issue_date, "articles": len(issue.articles)})
 
     @app.post("/api/issues/{issue_date}/send")
-    def send_issue_api(issue_date: str) -> JSONResponse:
+    def send_issue_api(issue_date: str, lang: str = "ko") -> JSONResponse:
         issue = store.get_issue(issue_date)
         if issue is None:
             raise HTTPException(status_code=404, detail="Issue not found")
         try:
-            send_issue(issue, settings=_effective_mail_settings(settings, store))
+            send_issue(issue, settings=_effective_mail_settings(settings, store), lang=lang)
         except MailConfigError as exc:
             return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
         store.mark_sent(issue.issue_date)
@@ -118,7 +120,12 @@ def _render_index(
             articles = sort_articles_for_section(category, articles, issue.issue_date)
             displayed_articles.extend(articles)
             sections.append(
-                {"key": category, "label": SECTION_LABELS[category], "articles": articles}
+                {
+                    "key": category,
+                    "label_ko": SECTION_LABELS[category],
+                    "label_en": SECTION_LABELS_EN[category],
+                    "articles": articles,
+                }
             )
     return templates.TemplateResponse(
         request,
@@ -130,7 +137,9 @@ def _render_index(
             "today": date.today().isoformat(),
             "assess_priority": assess_priority,
             "display_summary_ko": display_summary_ko,
+            "display_summary_en": display_summary_en,
             "display_title_ko": display_title_ko,
+            "display_title_en": display_title_en,
             "display_url": display_url,
             "region_counts": region_counts(displayed_articles) if issue else {},
             "region_filter_options": REGION_FILTERS,

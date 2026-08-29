@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Automotive 뉴스레터{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}?v=20260829-sources">
+    <script>
+      if (localStorage.getItem("preferred_lang") === "en") {
+        document.documentElement.classList.add("lang-en-active");
+      }
+    </script>
     <script defer src="https://unpkg.com/lucide@latest"></script>
     <script defer src="{{ url_for('static', path='app.js') }}?v=20260829-sources"></script>
   </head>
