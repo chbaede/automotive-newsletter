@@ -17,4 +17,4 @@ RUN mkdir -p /app/data
 
 EXPOSE 8000
 
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "1", "--timeout", "120", "automotive_newsletter.web:create_app()"]
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "1", "--timeout", "120", "--forwarded-allow-ips", "*", "automotive_newsletter.web:create_app()"]

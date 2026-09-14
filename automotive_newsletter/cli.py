@@ -42,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
             host=args.host,
             port=args.port,
             reload=args.reload,
+            proxy_headers=True,
+            forwarded_allow_ips="*",
         )
         return 0
     if command == "collect":
