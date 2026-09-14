@@ -46,6 +46,9 @@ def test_home_renders_history_refresh_and_send_controls(tmp_path):
     assert 'name="newsletter_to"' in response.text
     assert "소스 상태" in response.text
     assert 'data-source-health-action' in response.text
+    assert 'href="/static/styles.css?v=' in response.text
+    assert 'src="/static/app.js?v=' in response.text
+    assert "http://testserver/static" not in response.text
 
 
 def test_home_uses_korean_titles_clean_summaries_and_priority_order(tmp_path):

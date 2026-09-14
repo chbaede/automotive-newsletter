@@ -9,6 +9,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .collector import check_feed_health, collect_and_store
 from .config import Settings, load_settings, settings_with_mail_overrides
@@ -38,6 +39,7 @@ def create_app(store: NewsletterStore | None = None, settings: Settings | None =
     settings = settings or load_settings()
     store = store or NewsletterStore(settings.db_path)
     app = FastAPI(title="Automotive Newsletter")
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
     app.state.store = store
     app.state.settings = settings
     app.mount("/static", StaticFiles(directory=str(PACKAGE_DIR / "static")), name="static")
