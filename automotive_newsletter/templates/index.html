@@ -12,7 +12,7 @@
         <p>OEM · Tier 1 · SDV · Conference</p>
       </div>
     </div>
-    <form class="collect-form" data-collect-form>
+    <form class="collect-form" data-collect-form data-admin-only>
       <button type="submit" class="primary-action">
         <i data-lucide="refresh-cw"></i>
         <span>
@@ -53,7 +53,7 @@
             <span class="lang-en" style="display:none;">News</span>
           </span>
         </button>
-        <button type="button" class="view-tab" data-view-tab="settings" aria-pressed="false">
+        <button type="button" class="view-tab" data-view-tab="settings" data-admin-only aria-pressed="false">
           <i data-lucide="settings"></i>
           <span>
             <span class="lang-ko">메일 설정</span>
@@ -87,7 +87,7 @@
           </p>
         </div>
         <div class="header-actions" style="display: flex; gap: 0.5rem;">
-          <form data-send-form data-issue-date="{{ issue.issue_date }}">
+          <form data-send-form data-issue-date="{{ issue.issue_date }}" data-admin-only>
             <button type="submit" class="send-action">
               <i data-lucide="send"></i>
               <span>
@@ -357,7 +357,7 @@
           <span class="lang-ko">오늘의 자동차 뉴스레터를 아직 만들지 않았습니다.</span>
           <span class="lang-en" style="display:none;">Today's automotive newsletter hasn't been created yet.</span>
         </h2>
-        <p>
+        <p data-admin-only>
           <span class="lang-ko">{{ today }} 이슈를 만들려면 왼쪽의 새로 수집 버튼을 누르세요.</span>
           <span class="lang-en" style="display:none;">Click Collect News on the left to create the {{ today }} issue.</span>
         </p>

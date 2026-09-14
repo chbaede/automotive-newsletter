@@ -23,6 +23,67 @@ document.addEventListener("DOMContentLoaded", () => {
     status.dataset.tone = tone;
   };
 
+  const getAdminKey = () => localStorage.getItem("admin_key") || "";
+
+  const adminHeaders = () => {
+    const key = getAdminKey();
+    return key ? { "X-Admin-Key": key } : {};
+  };
+
+  const checkAdminMode = () => {
+    const key = getAdminKey();
+    if (key) {
+      document.body.classList.add("admin-mode");
+    } else {
+      document.body.classList.remove("admin-mode");
+    }
+  };
+
+  // Check URL query parameters (?admin=KEY or ?key=KEY)
+  const urlParams = new URLSearchParams(window.location.search);
+  const secretKey = urlParams.get("admin") || urlParams.get("key");
+  if (secretKey) {
+    localStorage.setItem("admin_key", secretKey.trim());
+    urlParams.delete("admin");
+    urlParams.delete("key");
+    const newQuery = urlParams.toString() ? `?${urlParams.toString()}` : "";
+    window.history.replaceState({}, document.title, window.location.pathname + newQuery + window.location.hash);
+  }
+  checkAdminMode();
+
+  // Secret trigger: clicking .brand-mark 5 times
+  const brandMark = document.querySelector(".brand-mark");
+  if (brandMark) {
+    let clickCount = 0;
+    let clickTimer = null;
+    brandMark.addEventListener("click", () => {
+      clickCount += 1;
+      clearTimeout(clickTimer);
+      clickTimer = setTimeout(() => {
+        clickCount = 0;
+      }, 2500);
+
+      if (clickCount >= 5) {
+        clickCount = 0;
+        const currentKey = getAdminKey();
+        if (currentKey) {
+          if (confirm("관리자 모드를 종료(로그아웃)하시겠습니까?")) {
+            localStorage.removeItem("admin_key");
+            checkAdminMode();
+            showStatus("관리자 모드가 해제되었습니다.");
+          }
+        } else {
+          const input = prompt("관리자 키(비밀번호)를 입력하세요:");
+          if (input !== null && input.trim()) {
+            localStorage.setItem("admin_key", input.trim());
+            checkAdminMode();
+            showStatus("관리자 모드가 활성화되었습니다.");
+          }
+        }
+      }
+    });
+  }
+
   if (collectForm) {
     collectForm.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -30,9 +91,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const button = collectForm.querySelector("button");
       button.disabled = true;
       try {
-        const response = await fetch("/api/collect", { method: "POST" });
+        const response = await fetch("/api/collect", {
+          method: "POST",
+          headers: adminHeaders(),
+        });
         const payload = await response.json();
         if (!response.ok || !payload.ok) {
+          if (response.status === 401) {
+            localStorage.removeItem("admin_key");
+            checkAdminMode();
+          }
           throw new Error(payload.message || "수집에 실패했습니다.");
         }
         window.location.href = `/issues/${payload.issue_date}`;
@@ -125,11 +193,15 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         const response = await fetch("/api/settings/mail", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...adminHeaders() },
           body: JSON.stringify(payload),
         });
         const result = await response.json();
         if (!response.ok || !result.ok) {
+          if (response.status === 401) {
+            localStorage.removeItem("admin_key");
+            checkAdminMode();
+          }
           throw new Error(result.message || "메일 설정 저장에 실패했습니다.");
         }
         if (passwordInput) {
@@ -227,9 +299,16 @@ document.addEventListener("DOMContentLoaded", () => {
       button.disabled = true;
       try {
         const lang = document.documentElement.classList.contains("lang-en-active") ? "en" : "ko";
-        const response = await fetch(`/api/issues/${issueDate}/send?lang=${lang}`, { method: "POST" });
+        const response = await fetch(`/api/issues/${issueDate}/send?lang=${lang}`, {
+          method: "POST",
+          headers: adminHeaders(),
+        });
         const payload = await response.json();
         if (!response.ok || !payload.ok) {
+          if (response.status === 401) {
+            localStorage.removeItem("admin_key");
+            checkAdminMode();
+          }
           throw new Error(payload.message || "메일 발송에 실패했습니다.");
         }
         showStatus(payload.message, "success");

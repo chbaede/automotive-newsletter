@@ -56,13 +56,27 @@ def create_app(store: NewsletterStore | None = None, settings: Settings | None =
             raise HTTPException(status_code=404, detail="Issue not found")
         return _render_index(request, store, settings, issue)
 
+    def _is_admin(request: Request) -> bool:
+        if not settings.admin_key:
+            return True
+        key = request.headers.get("X-Admin-Key") or request.query_params.get("admin_key")
+        return key == settings.admin_key
+
+    @app.get("/api/admin/verify")
+    def verify_admin(request: Request) -> JSONResponse:
+        return JSONResponse({"ok": True, "admin": _is_admin(request)})
+
     @app.post("/api/collect")
-    def collect_today() -> JSONResponse:
+    def collect_today(request: Request) -> JSONResponse:
+        if not _is_admin(request):
+            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=401)
         issue = collect_and_store(store=store, settings=settings, issue_date=date.today().isoformat())
         return JSONResponse({"ok": True, "issue_date": issue.issue_date, "articles": len(issue.articles)})
 
     @app.post("/api/issues/{issue_date}/send")
-    def send_issue_api(issue_date: str, lang: str = "ko") -> JSONResponse:
+    def send_issue_api(issue_date: str, request: Request, lang: str = "ko") -> JSONResponse:
+        if not _is_admin(request):
+            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=401)
         issue = store.get_issue(issue_date)
         if issue is None:
             raise HTTPException(status_code=404, detail="Issue not found")
@@ -74,13 +88,17 @@ def create_app(store: NewsletterStore | None = None, settings: Settings | None =
         return JSONResponse({"ok": True, "message": "메일을 발송했습니다."})
 
     @app.get("/api/settings/mail")
-    def get_mail_settings_api() -> JSONResponse:
+    def get_mail_settings_api(request: Request) -> JSONResponse:
+        if not _is_admin(request):
+            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=401)
         return JSONResponse(
             {"ok": True, "settings": _public_mail_settings(settings, store.mail_settings())}
         )
 
     @app.post("/api/settings/mail")
-    def save_mail_settings_api(payload: dict[str, object] = Body(...)) -> JSONResponse:
+    def save_mail_settings_api(request: Request, payload: dict[str, object] = Body(...)) -> JSONResponse:
+        if not _is_admin(request):
+            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=401)
         try:
             normalized = _normalize_mail_settings_payload(payload, store.mail_settings())
         except ValueError as exc:

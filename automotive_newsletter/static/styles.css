@@ -1132,3 +1132,26 @@ html.lang-en-active .lang-en {
 html:not(.lang-en-active) .lang-ko {
   display: inline !important;
 }
+
+/* Admin-only controls (Hidden by default for public visitors) */
+[data-admin-only] {
+  display: none !important;
+}
+
+body.admin-mode [data-admin-only] {
+  display: block !important;
+}
+
+body.admin-mode button[data-admin-only].view-tab {
+  display: inline-flex !important;
+}
+
+body.admin-mode .header-actions [data-admin-only] {
+  display: flex !important;
+}
+
+.brand-mark {
+  cursor: pointer;
+  user-select: none;
+}
+

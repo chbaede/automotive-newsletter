@@ -291,3 +291,35 @@ def test_conference_section_only_shows_upcoming_events_by_date(tmp_path):
     assert "2026년 6월 9-11일" in response.text
     assert response.text.index("Earlier Event") < response.text.index("Later Event")
     assert "event_start:" not in response.text
+
+
+def test_admin_key_protection(tmp_path):
+    from automotive_newsletter.config import Settings
+    from fastapi.testclient import TestClient
+
+    store = NewsletterStore(tmp_path / "newsletter.db")
+    settings = Settings(db_path=tmp_path / "newsletter.db", admin_key="secret-key-123")
+    app = create_app(store=store, settings=settings)
+    client = TestClient(app)
+
+    # Verify admin endpoint
+    assert client.get("/api/admin/verify").json() == {"ok": True, "admin": False}
+    assert client.get("/api/admin/verify", headers={"X-Admin-Key": "wrong"}).json() == {"ok": True, "admin": False}
+    assert client.get("/api/admin/verify", headers={"X-Admin-Key": "secret-key-123"}).json() == {"ok": True, "admin": True}
+
+    # Collect without admin key returns 401
+    resp = client.post("/api/collect")
+    assert resp.status_code == 401
+    assert resp.json()["ok"] is False
+
+    # Collect with wrong key returns 401
+    resp = client.post("/api/collect", headers={"X-Admin-Key": "wrong"})
+    assert resp.status_code == 401
+
+    # Mail settings GET/POST without key returns 401
+    assert client.get("/api/settings/mail").status_code == 401
+    assert client.post("/api/settings/mail", json={"smtp_port": 587}).status_code == 401
+
+    # Mail settings with key returns 200
+    assert client.get("/api/settings/mail", headers={"X-Admin-Key": "secret-key-123"}).status_code == 200
+
