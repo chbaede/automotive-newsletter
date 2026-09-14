@@ -6,7 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -55,6 +55,16 @@ def create_app(store: NewsletterStore | None = None, settings: Settings | None =
         if issue is None:
             raise HTTPException(status_code=404, detail="Issue not found")
         return _render_index(request, store, settings, issue)
+
+    @app.get("/ads.txt", response_class=PlainTextResponse)
+    def ads_txt() -> PlainTextResponse:
+        content = "google.com, pub-6854824605420161, DIRECT, f08c47fec0942fa0\n"
+        return PlainTextResponse(content, media_type="text/plain")
+
+    @app.get("/robots.txt", response_class=PlainTextResponse)
+    def robots_txt() -> PlainTextResponse:
+        content = "User-agent: *\nAllow: /\nDisallow: /api/\n"
+        return PlainTextResponse(content, media_type="text/plain")
 
     def _is_admin(request: Request) -> bool:
         if not settings.admin_key:

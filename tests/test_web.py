@@ -323,3 +323,30 @@ def test_admin_key_protection(tmp_path):
     # Mail settings with key returns 200
     assert client.get("/api/settings/mail", headers={"X-Admin-Key": "secret-key-123"}).status_code == 200
 
+
+def test_ads_txt_and_seo_integration(tmp_path):
+    from fastapi.testclient import TestClient
+
+    store = NewsletterStore(tmp_path / "newsletter.db")
+    app = create_app(store=store)
+    client = TestClient(app)
+
+    # ads.txt verification
+    ads_resp = client.get("/ads.txt")
+    assert ads_resp.status_code == 200
+    assert ads_resp.headers["content-type"].startswith("text/plain")
+    assert "google.com, pub-6854824605420161, DIRECT, f08c47fec0942fa0" in ads_resp.text
+
+    # robots.txt verification
+    robots_resp = client.get("/robots.txt")
+    assert robots_resp.status_code == 200
+    assert "User-agent: *" in robots_resp.text
+
+    # SEO and AdSense verification on home page
+    home_resp = client.get("/")
+    assert home_resp.status_code == 200
+    assert "ca-pub-6854824605420161" in home_resp.text
+    assert '<meta name="description"' in home_resp.text
+    assert '<meta name="robots"' in home_resp.text
+
+

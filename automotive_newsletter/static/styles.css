@@ -1155,3 +1155,25 @@ body.admin-mode .header-actions [data-admin-only] {
   user-select: none;
 }
 
+/* Google AdSense containers */
+.ad-banner-wrapper {
+  margin: 28px 0;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-align: center;
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+.ad-label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+
