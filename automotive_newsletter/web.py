@@ -294,16 +294,22 @@ def start_daily_scheduler(app: FastAPI, collection_time: str) -> None:
     state = {"last_run": None}
 
     def loop() -> None:
+        print(f"[{datetime.now()}] Daily collection scheduler started (time: {collection_time})")
         while True:
-            now = datetime.now()
-            today = date.today().isoformat()
-            if now.strftime("%H:%M") == collection_time and state["last_run"] != today:
-                collect_and_store(
-                    store=app.state.store,
-                    settings=app.state.settings,
-                    issue_date=today,
-                )
-                state["last_run"] = today
+            try:
+                now = datetime.now()
+                today = date.today().isoformat()
+                if now.strftime("%H:%M") == collection_time and state["last_run"] != today:
+                    print(f"[{datetime.now()}] Starting scheduled daily collection for {today}...")
+                    issue = collect_and_store(
+                        store=app.state.store,
+                        settings=app.state.settings,
+                        issue_date=today,
+                    )
+                    state["last_run"] = today
+                    print(f"[{datetime.now()}] Scheduled collection complete: {len(issue.articles)} articles")
+            except Exception as exc:
+                print(f"[{datetime.now()}] Error during scheduled collection: {exc}")
             time.sleep(30)
 
     @app.on_event("startup")

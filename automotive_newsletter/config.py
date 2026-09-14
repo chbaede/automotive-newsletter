@@ -24,7 +24,7 @@ class Settings:
     smtp_from: str | None = None
     newsletter_to: str | None = None
     smtp_tls: bool = True
-    daily_collection_time: str = "08:00"
+    daily_collection_time: str = "06:00"
     enable_daily_scheduler: bool = False
     request_timeout_seconds: float = 12.0
     max_entries_per_feed: int = 12
@@ -59,7 +59,7 @@ def load_settings() -> Settings:
         smtp_from=os.getenv("SMTP_FROM"),
         newsletter_to=os.getenv("NEWSLETTER_TO"),
         smtp_tls=_bool_env("SMTP_TLS", True),
-        daily_collection_time=os.getenv("DAILY_COLLECTION_TIME", "08:00"),
+        daily_collection_time=os.getenv("DAILY_COLLECTION_TIME", "06:00"),
         enable_daily_scheduler=_bool_env("ENABLE_DAILY_SCHEDULER", False),
         request_timeout_seconds=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "8")),
         max_entries_per_feed=int(os.getenv("MAX_ENTRIES_PER_FEED", "12")),

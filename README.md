@@ -35,7 +35,7 @@ SMTP_TLS=true
 
 ```bash
 ENABLE_DAILY_SCHEDULER=true
-DAILY_COLLECTION_TIME=08:00
+DAILY_COLLECTION_TIME=06:00
 python -m automotive_newsletter serve
 ```
 
