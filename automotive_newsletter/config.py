@@ -31,6 +31,7 @@ class Settings:
     resolve_news_links: bool = True
     fetch_article_excerpts: bool = False
     verify_tls: bool = True
+    admin_key: str | None = None
 
     @property
     def recipients(self) -> list[str]:
@@ -65,6 +66,7 @@ def load_settings() -> Settings:
         resolve_news_links=_bool_env("RESOLVE_NEWS_LINKS", True),
         fetch_article_excerpts=_bool_env("FETCH_ARTICLE_EXCERPTS", False),
         verify_tls=_bool_env("VERIFY_TLS", True),
+        admin_key=os.getenv("ADMIN_KEY") or os.getenv("ADMIN_PASSWORD"),
     )
 
 
