@@ -20,9 +20,12 @@ APP_NAME="${APP_NAME:-automotive-newsletter}"
 IMAGE_NAME="${IMAGE_NAME:-automotive-newsletter:latest}"
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="${PROJECT_DIR}/data"
+TIMEZONE="${TZ:-Asia/Seoul}"
+COLLECTION_TIME="${DAILY_COLLECTION_TIME:-06:00}"
 
 echo "=========================================="
 echo " Starting deployment: ${APP_NAME}"
+echo " Schedule: daily at ${COLLECTION_TIME} (${TIMEZONE})"
 echo "=========================================="
 
 cd "${PROJECT_DIR}"
@@ -57,7 +60,8 @@ docker run -d \
   -p 127.0.0.1:8000:8000 \
   -v "${DATA_DIR}:/app/data" \
   -e ENABLE_DAILY_SCHEDULER=true \
-  -e DAILY_COLLECTION_TIME=08:00 \
+  -e DAILY_COLLECTION_TIME="${COLLECTION_TIME}" \
+  -e TZ="${TIMEZONE}" \
   -e ADMIN_KEY="${ADMIN_KEY}" \
   --restart unless-stopped \
   "${IMAGE_NAME}"
@@ -81,3 +85,4 @@ else
   echo "=========================================="
   exit 1
 fi
+

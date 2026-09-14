@@ -94,15 +94,18 @@ def run_schedule(collection_time: str) -> int:
     print(f"daily collection scheduled for {collection_time}")
     last_run: str | None = None
     while True:
-        now = datetime.now()
-        today = date.today().isoformat()
-        if now.strftime("%H:%M") == collection_time and last_run != today:
-            settings = load_settings()
-            issue = collect_and_store(
-                store=NewsletterStore(settings.db_path),
-                settings=settings,
-                issue_date=today,
-            )
-            print(f"saved {issue.issue_date}: {len(issue.articles)} articles")
-            last_run = today
+        try:
+            now = datetime.now()
+            today = date.today().isoformat()
+            if now.strftime("%H:%M") == collection_time and last_run != today:
+                settings = load_settings()
+                issue = collect_and_store(
+                    store=NewsletterStore(settings.db_path),
+                    settings=settings,
+                    issue_date=today,
+                )
+                print(f"saved {issue.issue_date}: {len(issue.articles)} articles")
+                last_run = today
+        except Exception as exc:
+            print(f"error during scheduled collection: {exc}")
         time.sleep(30)
