@@ -2,6 +2,14 @@
 {% block body %}
 <div class="app-shell">
   <aside class="history-rail">
+    <a href="https://main.yocto.co.kr/" class="hub-backlink" target="_blank" rel="noopener noreferrer">
+      <i data-lucide="arrow-left"></i>
+      <span>
+        <span class="lang-ko">Yocto 허브 메인</span>
+        <span class="lang-en" style="display:none;">Yocto Hub Portal</span>
+      </span>
+      <i data-lucide="external-link" style="width: 11px; height: 11px; opacity: 0.6;"></i>
+    </a>
     <div class="brand">
       <span class="brand-mark">AN</span>
       <div>
@@ -68,11 +76,19 @@
           </span>
         </button>
       
-      <div style="margin-left: auto; display: flex;">
+      <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+        <a href="https://main.yocto.co.kr/" class="hub-link-action" target="_blank" rel="noopener noreferrer" title="Yocto Hub 메인 포털로 이동">
+          <i data-lucide="layout-grid"></i>
+          <span>
+            <span class="lang-ko">Yocto 허브</span>
+            <span class="lang-en" style="display:none;">Yocto Hub</span>
+          </span>
+          <i data-lucide="external-link" style="width: 12px; height: 12px; opacity: 0.6;"></i>
+        </a>
         <button type="button" class="lang-toggle-action" data-lang-toggle>
-            <i data-lucide="languages"></i>
-            <span class="lang-text">EN</span>
-          </button>
+          <i data-lucide="languages"></i>
+          <span class="lang-text">EN</span>
+        </button>
       </div>
     </nav>
     <section data-view-panel="news">

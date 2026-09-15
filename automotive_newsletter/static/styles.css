@@ -54,6 +54,30 @@ a {
   min-width: 0;
 }
 
+.hub-backlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  margin-bottom: 16px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.hub-backlink:hover {
+  color: var(--accent-strong);
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.hub-backlink svg {
+  width: 14px;
+  height: 14px;
+}
+
 .brand {
   display: flex;
   gap: 12px;
@@ -1100,6 +1124,34 @@ html.lang-en-active .lang-ko {
 
 html:not(.lang-en-active) .lang-en {
   display: none !important;
+}
+
+/* Yocto Hub Link button */
+.hub-link-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.04);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.hub-link-action:hover {
+  background: var(--surface-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.hub-link-action svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* Language Toggle button */
