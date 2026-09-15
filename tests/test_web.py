@@ -348,5 +348,8 @@ def test_ads_txt_and_seo_integration(tmp_path):
     assert "ca-pub-6854824605420161" in home_resp.text
     assert '<meta name="description"' in home_resp.text
     assert '<meta name="robots"' in home_resp.text
+    assert "https://main.yocto.co.kr/" in home_resp.text
+    assert "Yocto 허브" in home_resp.text
+
 
 
