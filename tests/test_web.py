@@ -350,6 +350,7 @@ def test_ads_txt_and_seo_integration(tmp_path):
     assert '<meta name="robots"' in home_resp.text
     assert "https://main.yocto.co.kr/" in home_resp.text
     assert "Yocto 허브" in home_resp.text
+    assert 'content="2VmKKN5VGVIL9P-KiYywyJoeJQiKVCxEhRM4japgnzE"' in home_resp.text
 
 
 
