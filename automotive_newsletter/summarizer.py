@@ -4,6 +4,7 @@ import re
 from dataclasses import replace
 
 from .models import Article
+from .taxonomy import classify_taxonomy
 
 
 OEM_NAMES = [
@@ -95,49 +96,48 @@ CATEGORY_LABELS = {
     "oem": "OEM",
     "tier1": "Tier 1",
     "sdv": "SDV",
+    "ev_battery": "전기차/배터리",
+    "adas_autonomous": "ADAS/자율주행",
+    "regulation": "규제/정책",
+    "market": "시장/판매",
+    "manufacturing": "생산/제조",
+    "supply_chain": "공급망/반도체",
+    "cybersecurity": "차량 사이버보안",
+    "software": "차량 소프트웨어",
     "institution": "기관/매거진",
     "conference": "컨퍼런스",
+    "reference": "참고자료",
 }
 
 
 def classify_article(article: Article) -> Article:
-    text = f"{article.title} {article.excerpt} {article.source}"
-    lowered = text.lower()
-    tags = _extract_tags(text)
-    fallback_category = article.category or "big"
-    category = "big"
-
-    if any(_contains_name(text, name) for name in CONFERENCE_NAMES) or re.search(
-        r"\b(conference|expo|summit|symposium|show|congress|event)\b", lowered
-    ):
-        category = "conference"
-    elif any(term in lowered for term in SDV_TERMS):
-        category = "sdv"
-    elif any(_contains_name(text, name) for name in TIER1_NAMES):
-        category = "tier1"
-    elif any(_contains_name(text, name) for name in OEM_NAMES):
-        category = "oem"
-    elif any(_contains_name(text, name) for name in INSTITUTION_NAMES):
-        category = "institution"
-    elif fallback_category != "conference":
-        category = fallback_category
-
-    score = _score_article(article, category, tags, lowered)
-    summary = article.summary_ko or summarize_article(
-        replace(article, category=category, tags=tags, score=score)
+    tax = classify_taxonomy(
+        title=article.title,
+        excerpt=article.excerpt,
+        source=article.source,
+        source_type=article.source_type,
+        bucket=article.category,
     )
-    entities = [
-        name for name in [*OEM_NAMES, *TIER1_NAMES, *INSTITUTION_NAMES, *CONFERENCE_NAMES]
-        if _contains_name(text, name)
-    ]
-    topics = [tag for tag in tags if tag not in entities]
-    sec_cats = [fallback_category] if fallback_category != category and fallback_category != "big" else []
+    category = tax.primary_category
+    primary_category = tax.primary_category
+    secondary_categories = tax.secondary_categories
+    topics = tax.topics
+    entities = tax.entities
+
+    # Unified tags preserving entities and topics
+    tags = entities + [t for t in topics if t not in entities]
+
+    text = f"{article.title} {article.excerpt} {article.source}".lower()
+    score = _score_article(article, category, tags, text)
+    summary = article.summary_ko or summarize_article(
+        replace(article, category=category, primary_category=primary_category, tags=tags, score=score)
+    )
 
     return replace(
         article,
         category=category,
-        primary_category=category,
-        secondary_categories=sec_cats,
+        primary_category=primary_category,
+        secondary_categories=secondary_categories,
         tags=tags,
         topics=topics,
         entities=entities,
@@ -220,6 +220,22 @@ def _impact_sentence(category: str) -> str:
         return "행사 아젠다와 발표 기업을 통해 다음 기술 화두를 읽을 수 있습니다"
     if category == "institution":
         return "시장 전망과 업계 담론을 확인하는 참고 자료로 쓸 수 있습니다"
+    if category == "ev_battery":
+        return "전동화 전환 속도와 배터리 공급망 협력 구도를 점검할 필요가 있습니다"
+    if category == "adas_autonomous":
+        return "자율주행 상용화 일정과 규제 대응 현황을 주목해야 합니다"
+    if category == "regulation":
+        return "글로벌 규제 및 관세 장벽이 공급망과 수출 전략에 미칠 파장을 주시해야 합니다"
+    if category == "cybersecurity":
+        return "차량 보안 규정 준수와 침해 대응 역량 확보가 핵심 과제입니다"
+    if category == "supply_chain":
+        return "반도체 및 핵심 부품 수급 안정성과 리스크 관리가 요구됩니다"
+    if category == "manufacturing":
+        return "생산 효율화와 공장 가동률 변화를 살펴볼 만합니다"
+    if category == "market":
+        return "지역별 판매 추이와 수익성 변화를 파악할 필요가 있습니다"
+    if category == "software":
+        return "소프트웨어 개발 스택과 오픈소스 생태계 흐름을 파악할 만합니다"
     return "산업 전반에 파급될 수 있는 흐름인지 확인할 만합니다"
 
 

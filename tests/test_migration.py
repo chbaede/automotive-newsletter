@@ -186,3 +186,4 @@ def test_legacy_database_migration_and_data_preservation(tmp_path):
     assert retrieved.event_id == "EVT_2026_SBW"
     assert retrieved.related_article_ids == ["art_12345"]
     assert retrieved.priority_score == 92.0
+

@@ -10,11 +10,36 @@ SECTION_LABELS = {
     "oem": "OEM 주요 동향",
     "tier1": "Tier 1 / 공급망",
     "sdv": "SDV / 소프트웨어",
-    "institution": "기관 / 인물 / 매거진",
+    "ev_battery": "전기차 / 배터리",
+    "adas_autonomous": "ADAS / 자율주행",
+    "regulation": "정책 / 규제 / 통상",
+    "market": "시장 / 판매 / 금융",
+    "manufacturing": "생산 / 제조",
+    "supply_chain": "공급망 / 반도체",
+    "cybersecurity": "차량 사이버보안",
+    "software": "임베디드 / 차량 SW",
     "conference": "컨퍼런스 / 이벤트",
+    "institution": "기관 / 인물 / 매거진",
+    "reference": "참고자료 / 기타",
 }
 
-SECTION_ORDER = ["big", "oem", "tier1", "sdv", "institution", "conference"]
+SECTION_ORDER = [
+    "big",
+    "oem",
+    "tier1",
+    "sdv",
+    "ev_battery",
+    "adas_autonomous",
+    "regulation",
+    "market",
+    "manufacturing",
+    "supply_chain",
+    "cybersecurity",
+    "software",
+    "conference",
+    "institution",
+    "reference",
+]
 
 
 AUTHORITY_HIERARCHY: dict[str, int] = {
@@ -557,8 +582,17 @@ def classify_source_type(name: str, feed: SourceFeed | None = None) -> str:
 SECTION_LABELS_EN = {
     "big": "Top News",
     "oem": "OEM Trends",
-    "tier1": "Tier 1 / Supply Chain",
-    "sdv": "SDV / Software",
-    "institution": "Institutions / Magazines",
-    "conference": "Conferences / Events",
+    "tier1": "Tier 1 & Suppliers",
+    "sdv": "SDV & E/E Architecture",
+    "ev_battery": "EV & Battery",
+    "adas_autonomous": "ADAS & Autonomous",
+    "regulation": "Regulation & Policy",
+    "market": "Market & Sales",
+    "manufacturing": "Manufacturing & Production",
+    "supply_chain": "Supply Chain & Chips",
+    "cybersecurity": "Cybersecurity",
+    "software": "Vehicle Software",
+    "conference": "Conferences & Events",
+    "institution": "Institutions & Magazines",
+    "reference": "References",
 }
