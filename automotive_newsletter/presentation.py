@@ -135,6 +135,8 @@ def display_title_ko(article: Article) -> str:
 def display_summary_ko(article: Article) -> str:
     summary = article.summary_ko or summarize_article(replace(article, tags=visible_tags(article)))
     summary = LEGACY_ORIGINAL_TITLE_RE.sub("", summary).strip()
+    if article.why_it_matters_ko and article.why_it_matters_ko not in summary:
+        summary = f"{summary} [의미: {article.why_it_matters_ko.strip()}]" if summary else article.why_it_matters_ko.strip()
     if summary:
         return summary
     return "핵심 동향을 확인할 수 있는 자동차 산업 참고 링크입니다."
@@ -145,15 +147,18 @@ def display_title_en(article: Article) -> str:
 
 
 def display_summary_en(article: Article) -> str:
+    if article.summary_en:
+        return article.summary_en.strip()
     if article.excerpt:
         return article.excerpt.strip()
     return "Reference link for key trends in the automotive industry."
 
 
 def display_url(article: Article) -> str | None:
-    if _is_intermediary_url(article.url):
+    target = article.canonical_url or article.original_url or article.url
+    if _is_intermediary_url(target):
         return None
-    return article.url
+    return target
 
 
 def regions_for_article(article: Article) -> list[RegionSignal]:

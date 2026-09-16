@@ -57,9 +57,24 @@ class NewsletterStore:
                     """
                     insert into articles (
                         issue_id, position, title, url, source, category, published_at,
-                        summary_ko, excerpt, tags, score
+                        summary_ko, excerpt, tags, score,
+                        article_id, canonical_url, original_url, source_id, publisher,
+                        discovered_via, source_type, source_authority, summary_en, why_it_matters_ko,
+                        primary_category, secondary_categories, topics, entities,
+                        source_score, relevance_score, impact_score, novelty_score, recency_score,
+                        priority_score, event_id, related_article_ids,
+                        is_official, is_reference, is_primary_source, collected_at
                     )
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    values (
+                        ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?,
+                        ?, ?, ?, ?
+                    )
                     """,
                     (
                         issue_id,
@@ -73,6 +88,32 @@ class NewsletterStore:
                         article.excerpt,
                         json.dumps(article.tags, ensure_ascii=False),
                         article.score,
+                        article.article_id,
+                        article.canonical_url,
+                        article.original_url,
+                        article.source_id,
+                        article.publisher,
+                        article.discovered_via,
+                        article.source_type,
+                        article.source_authority,
+                        article.summary_en,
+                        article.why_it_matters_ko,
+                        article.primary_category,
+                        json.dumps(article.secondary_categories, ensure_ascii=False),
+                        json.dumps(article.topics, ensure_ascii=False),
+                        json.dumps(article.entities, ensure_ascii=False),
+                        article.source_score,
+                        article.relevance_score,
+                        article.impact_score,
+                        article.novelty_score,
+                        article.recency_score,
+                        article.priority_score,
+                        article.event_id,
+                        json.dumps(article.related_article_ids, ensure_ascii=False),
+                        1 if article.is_official else 0,
+                        1 if article.is_reference else 0,
+                        1 if article.is_primary_source else 0,
+                        article.collected_at.isoformat() if article.collected_at else None,
                     ),
                 )
         issue = self.get_issue(issue_date)
@@ -217,10 +258,74 @@ class NewsletterStore:
                     summary_ko text not null,
                     excerpt text not null,
                     tags text not null,
-                    score real not null
+                    score real not null,
+                    article_id text,
+                    canonical_url text,
+                    original_url text,
+                    source_id text,
+                    publisher text,
+                    discovered_via text,
+                    source_type text not null default 'media',
+                    source_authority integer not null default 70,
+                    summary_en text not null default '',
+                    why_it_matters_ko text not null default '',
+                    primary_category text,
+                    secondary_categories text not null default '[]',
+                    topics text not null default '[]',
+                    entities text not null default '[]',
+                    source_score real not null default 0,
+                    relevance_score real not null default 0,
+                    impact_score real not null default 0,
+                    novelty_score real not null default 0,
+                    recency_score real not null default 0,
+                    priority_score real not null default 0,
+                    event_id text,
+                    related_article_ids text not null default '[]',
+                    is_official integer not null default 0,
+                    is_reference integer not null default 0,
+                    is_primary_source integer not null default 0,
+                    collected_at text
                 )
                 """
             )
+
+            # Lightweight schema migration for existing databases
+            existing_columns = {
+                row["name"]
+                for row in conn.execute("pragma table_info(articles)").fetchall()
+            }
+            new_columns = [
+                ("article_id", "text"),
+                ("canonical_url", "text"),
+                ("original_url", "text"),
+                ("source_id", "text"),
+                ("publisher", "text"),
+                ("discovered_via", "text"),
+                ("source_type", "text default 'media'"),
+                ("source_authority", "integer default 70"),
+                ("summary_en", "text default ''"),
+                ("why_it_matters_ko", "text default ''"),
+                ("primary_category", "text"),
+                ("secondary_categories", "text default '[]'"),
+                ("topics", "text default '[]'"),
+                ("entities", "text default '[]'"),
+                ("source_score", "real default 0"),
+                ("relevance_score", "real default 0"),
+                ("impact_score", "real default 0"),
+                ("novelty_score", "real default 0"),
+                ("recency_score", "real default 0"),
+                ("priority_score", "real default 0"),
+                ("event_id", "text"),
+                ("related_article_ids", "text default '[]'"),
+                ("is_official", "integer default 0"),
+                ("is_reference", "integer default 0"),
+                ("is_primary_source", "integer default 0"),
+                ("collected_at", "text"),
+            ]
+            for col_name, col_def in new_columns:
+                if col_name not in existing_columns:
+                    conn.execute(f"alter table articles add column {col_name} {col_def}")
+
             conn.execute(
                 """
                 create table if not exists app_settings (
@@ -233,16 +338,105 @@ class NewsletterStore:
 
     @staticmethod
     def _row_to_article(row: sqlite3.Row) -> Article:
+        keys = set(row.keys())
+
+        def get_val(key: str, default: object = None) -> object:
+            if key in keys:
+                v = row[key]
+                return v if v is not None else default
+            return default
+
+        def get_json_list(key: str) -> list[str]:
+            val = get_val(key, "[]")
+            if not val:
+                return []
+            try:
+                parsed = json.loads(str(val))
+                return parsed if isinstance(parsed, list) else []
+            except Exception:
+                return []
+
+        title = str(get_val("title", ""))
+        url = str(get_val("url", ""))
+        source = str(get_val("source", ""))
+        category = str(get_val("category", "big"))
+        published_at = _parse_datetime(get_val("published_at"))
+        summary_ko = str(get_val("summary_ko", ""))
+        excerpt = str(get_val("excerpt", ""))
+        tags = get_json_list("tags")
+        score = float(get_val("score", 0.0))
+
+        discovered_via = get_val("discovered_via")
+        source_id = get_val("source_id")
+        source_type = str(get_val("source_type", "media"))
+        source_authority = int(get_val("source_authority", 70))
+        publisher = get_val("publisher")
+
+        article_id = get_val("article_id")
+        canonical_url = get_val("canonical_url")
+        original_url = get_val("original_url")
+
+        summary_en = str(get_val("summary_en", ""))
+        why_it_matters_ko = str(get_val("why_it_matters_ko", ""))
+
+        primary_category = get_val("primary_category") or category
+        secondary_categories = get_json_list("secondary_categories")
+        topics = get_json_list("topics")
+        entities = get_json_list("entities")
+
+        source_score = float(get_val("source_score", source_authority))
+        relevance_score = float(get_val("relevance_score", 0.0))
+        impact_score = float(get_val("impact_score", 0.0))
+        novelty_score = float(get_val("novelty_score", 0.0))
+        recency_score = float(get_val("recency_score", 0.0))
+        priority_score = float(get_val("priority_score", score))
+
+        event_id = get_val("event_id")
+        related_article_ids = get_json_list("related_article_ids")
+
+        is_official = bool(get_val("is_official", 0))
+        is_reference = bool(get_val("is_reference", 0))
+        is_primary_source = bool(get_val("is_primary_source", 0))
+
+        collected_at = _parse_datetime(get_val("collected_at"))
+
         return Article(
-            title=row["title"],
-            url=row["url"],
-            source=row["source"],
-            category=row["category"],
-            published_at=_parse_datetime(row["published_at"]),
-            summary_ko=row["summary_ko"],
-            excerpt=row["excerpt"],
-            tags=json.loads(row["tags"] or "[]"),
-            score=row["score"],
+            title=title,
+            url=url,
+            source=source,
+            category=category,
+            published_at=published_at,
+            summary_ko=summary_ko,
+            excerpt=excerpt,
+            tags=tags,
+            score=score,
+            discovered_via=discovered_via,
+            source_id=source_id,
+            authority_score=source_authority,
+            source_type=source_type,
+            source_authority=source_authority,
+            publisher=publisher,
+            article_id=article_id,
+            canonical_url=canonical_url,
+            original_url=original_url,
+            summary_en=summary_en,
+            why_it_matters_ko=why_it_matters_ko,
+            primary_category=primary_category,
+            secondary_categories=secondary_categories,
+            topics=topics,
+            entities=entities,
+            source_score=source_score,
+            relevance_score=relevance_score,
+            impact_score=impact_score,
+            novelty_score=novelty_score,
+            recency_score=recency_score,
+            priority_score=priority_score,
+            event_id=event_id,
+            related_article_ids=related_article_ids,
+            is_official=is_official,
+            is_reference=is_reference,
+            is_primary_source=is_primary_source,
+            collected_at=collected_at,
         )
 
 

@@ -126,7 +126,26 @@ def classify_article(article: Article) -> Article:
     summary = article.summary_ko or summarize_article(
         replace(article, category=category, tags=tags, score=score)
     )
-    return replace(article, category=category, tags=tags, score=score, summary_ko=summary)
+    entities = [
+        name for name in [*OEM_NAMES, *TIER1_NAMES, *INSTITUTION_NAMES, *CONFERENCE_NAMES]
+        if _contains_name(text, name)
+    ]
+    topics = [tag for tag in tags if tag not in entities]
+    sec_cats = [fallback_category] if fallback_category != category and fallback_category != "big" else []
+
+    return replace(
+        article,
+        category=category,
+        primary_category=category,
+        secondary_categories=sec_cats,
+        tags=tags,
+        topics=topics,
+        entities=entities,
+        score=score,
+        priority_score=score,
+        source_score=float(article.source_authority),
+        summary_ko=summary,
+    )
 
 
 def summarize_article(article: Article) -> str:

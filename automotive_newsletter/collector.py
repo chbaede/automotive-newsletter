@@ -137,10 +137,11 @@ def collect_from_entries(
             for tok in tokens:
                 title_index.setdefault(tok, []).append(entry.title)
 
+        publisher_name = clean_text(entry.publisher or entry.source, 80) or "Unknown"
         article = Article(
             title=clean_text(entry.title, 240),
             url=canonical_url,
-            source=clean_text(entry.publisher or entry.source, 80) or "Unknown",
+            source=publisher_name,
             category=entry.bucket,
             published_at=entry.published_at,
             excerpt=clean_text(entry.excerpt, 420),
@@ -149,6 +150,16 @@ def collect_from_entries(
             authority_score=entry.authority_score,
             source_type=entry.source_type,
             source_authority=entry.source_authority,
+            publisher=publisher_name,
+            canonical_url=canonical_url,
+            original_url=entry.url,
+            primary_category=entry.bucket,
+            is_official=(entry.source_type == "official"),
+            is_reference=(entry.source_type in {"regulator", "institution", "research"}),
+            is_primary_source=(
+                entry.source_type in {"official", "regulator", "press_release"}
+            ),
+            collected_at=entry.collected_at or datetime.now(timezone.utc),
         )
         articles.append(classify_article(article))
 

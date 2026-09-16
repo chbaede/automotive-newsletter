@@ -72,12 +72,29 @@ AUTHORITY_SOURCES = [
 def assess_priority(article: Article) -> PrioritySignal:
     raw_score = int(round(article.score))
     issue_reasons = _issue_reasons(article)
-    authority = any(source in article.source.lower() for source in AUTHORITY_SOURCES)
+    authority = (
+        any(source in article.source.lower() for source in AUTHORITY_SOURCES)
+        or (article.source_authority is not None and article.source_authority >= 85)
+        or article.is_official
+    )
     category_weight = 8 if article.category in {"big", "oem", "tier1", "sdv"} else 0
     tag_weight = min(len(article.tags), 4) * 2
     issue_weight = min(len(issue_reasons), 3) * 7
     authority_weight = 6 if authority else 0
-    priority_score = min(100, raw_score + category_weight + tag_weight + issue_weight + authority_weight)
+    priority_score = min(
+        100, raw_score + category_weight + tag_weight + issue_weight + authority_weight
+    )
+
+    article.source_score = float(
+        article.source_authority
+        if article.source_authority is not None
+        else (90 if authority else 70)
+    )
+    article.relevance_score = float(
+        min(100, category_weight * 5 + tag_weight * 5 + (20 if article.is_official else 10))
+    )
+    article.impact_score = float(min(100, issue_weight * 4 + category_weight * 4))
+    article.priority_score = float(priority_score)
 
     if priority_score >= 86:
         level = "critical"
