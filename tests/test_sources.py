@@ -1,15 +1,19 @@
 from datetime import datetime, timezone
 
 from automotive_newsletter.collector import (
+    canonicalize_url,
+    check_feed_health,
     collect_from_entries,
     extract_source_and_publisher,
     fetch_feed_entries,
+    unwrap_google_redirect,
 )
 from automotive_newsletter.models import Article, FeedEntry
 from automotive_newsletter.sources import (
     AUTHORITY_HIERARCHY,
     DEFAULT_FEEDS,
     SourceFeed,
+    classify_source_type,
     get_enabled_sources,
     get_source,
     source_authority,
@@ -229,3 +233,290 @@ def test_backward_compatibility():
     assert "Electrek" in feed_names
     assert "InsideEVs" in feed_names
     assert "The Verge Transportation" in feed_names
+
+
+def test_google_news_redirect_resolution():
+    # 1. Google consent redirect
+    consent_url = "https://consent.google.com/m?continue=https://www.reuters.com/business/autos/article-1"
+    assert unwrap_google_redirect(consent_url) == "https://www.reuters.com/business/autos/article-1"
+
+    # 2. Google search redirect parameter
+    google_url = "https://www.google.com/url?q=https://www.reuters.com/business/autos/tesla-update?utm_source=twitter&sa=D"
+    assert unwrap_google_redirect(google_url) == "https://www.reuters.com/business/autos/tesla-update?utm_source=twitter"
+
+    # 3. Google News base64 encoded token
+    base64_url = "https://news.google.com/rss/articles/CBMiTWh0dHBzOi8vd3d3LnJldXRlcnMuY29tL2J1c2luZXNzL2F1dG9zLXRyYW5zcG9ydGF0aW9uL3Rlc2xhLXJlY2FsbC0yMDI0LTAxLTI1L9IBAA?oc=5"
+    unwrapped = unwrap_google_redirect(base64_url)
+    assert unwrapped == "https://www.reuters.com/business/autos-transportation/tesla-recall-2024-01-25/"
+
+    # 4. Canonicalize unwraps and removes tracking params
+    canon = canonicalize_url(google_url)
+    assert canon == "https://www.reuters.com/business/autos/tesla-update"
+
+
+def test_publisher_identification_for_reuters():
+    google_feed = SourceFeed(
+        name="Google News Automotive",
+        bucket="big",
+        url="https://news.google.com/rss/search?q=automotive",
+        id="google_news_automotive",
+        source_type="aggregator",
+        authority_score=40,
+    )
+
+    # 1. Identified via explicit source tag
+    class RawSource:
+        title = "Tesla reports quarterly deliveries"
+        source = {"title": "Reuters"}
+        link = "https://news.google.com/articles/123"
+
+    pub1, disc1, auth1 = extract_source_and_publisher(RawSource(), google_feed)
+    assert pub1 == "Reuters"
+    assert disc1 == "Google News"
+    assert auth1 == 95
+
+    # 2. Identified via title suffix
+    class RawSuffix:
+        title = "Global automakers pivot toward hybrids - Reuters"
+        source = None
+        link = "https://news.google.com/articles/456"
+
+    pub2, disc2, auth2 = extract_source_and_publisher(RawSuffix(), google_feed)
+    assert pub2 == "Reuters"
+    assert disc2 == "Google News"
+    assert auth2 == 95
+
+    # 3. Identified via destination link domain
+    class RawDomain:
+        title = "Chip supply stabilizes across major suppliers"
+        source = None
+        link = "https://www.google.com/url?q=https://www.reuters.com/technology/chips-auto-2026"
+
+    pub3, disc3, auth3 = extract_source_and_publisher(RawDomain(), google_feed)
+    assert pub3 == "Reuters"
+    assert disc3 == "Google News"
+    assert auth3 == 95
+
+
+def test_tracking_parameter_removal_and_canonicalization():
+    url = "HTTPS://WWW.Reuters.COM:443/business/autos/?utm_source=twitter&utm_medium=social&fbclid=abc123&page=2&sort=desc#section"
+    canon = canonicalize_url(url)
+    # Scheme and host lowercased, default port 443 removed, trailing slash normalized, tracking params stripped, query sorted
+    assert canon == "https://www.reuters.com/business/autos?page=2&sort=desc"
+
+    # Root trailing slash preserved
+    assert canonicalize_url("http://example.com:80/") == "http://example.com/"
+
+    # Avoid incorrectly merging different articles
+    url1 = "https://example.com/article/100?ref=home"
+    url2 = "https://example.com/article/200?ref=home"
+    assert canonicalize_url(url1) != canonicalize_url(url2)
+
+    url3 = "https://example.com/view?id=1"
+    url4 = "https://example.com/view?id=2"
+    assert canonicalize_url(url3) != canonicalize_url(url4)
+
+
+def test_unknown_publisher_warning_and_resilience():
+    google_feed = SourceFeed(
+        name="Google News Aggregator",
+        bucket="big",
+        url="https://news.google.com/rss/search?q=test",
+        id="google_news_agg",
+        source_type="aggregator",
+        authority_score=40,
+    )
+
+    class RawUnknown:
+        title = "Autonomous vehicle breakthrough announced today"
+        source = None
+        link = "https://some-obscure-domain-xyz.net/post/456"
+
+    pub, disc, auth = extract_source_and_publisher(RawUnknown(), google_feed)
+    assert pub == "Unknown"
+    assert disc == "Google News"
+    assert auth == 40  # fallback to feed authority score
+
+    class FakeParsed:
+        bozo = False
+        entries = [
+            {
+                "title": "Autonomous vehicle breakthrough announced today",
+                "link": "https://some-obscure-domain-xyz.net/post/456",
+                "summary": "Sample summary",
+            }
+        ]
+
+    class FakeResponse:
+        status_code = 200
+        content = b"<rss></rss>"
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            return None
+        def get(self, url):
+            return FakeResponse()
+
+    import automotive_newsletter.collector as collector_module
+    old_client = collector_module._feed_client
+    import feedparser
+    old_parse = feedparser.parse
+    try:
+        collector_module._feed_client = FakeClient
+        feedparser.parse = lambda c: FakeParsed()
+
+        entries, warnings = fetch_feed_entries([google_feed])
+        assert len(entries) == 1
+        assert entries[0].publisher == "Unknown"
+        assert entries[0].source == "Unknown"
+        assert any("출처(publisher) 식별 실패" in w for w in warnings)
+    finally:
+        collector_module._feed_client = old_client
+        feedparser.parse = old_parse
+
+
+def test_source_classification_and_authority_fallback():
+    # Classification across categories
+    assert classify_source_type("NHTSA") == "regulator"
+    assert classify_source_type("ACEA") == "regulator"
+    assert classify_source_type("IEEE Standards") == "institution"
+    assert classify_source_type("한국자동차모빌리티산업협회") == "institution"
+    assert classify_source_type("McKinsey Mobility") == "research"
+    assert classify_source_type("SAE International") == "research"
+    assert classify_source_type("PR Newswire") == "press_release"
+    assert classify_source_type("Linux Foundation AGL") == "open_source"
+    assert classify_source_type("Hyundai Motor Group Newsroom") == "official"
+    assert classify_source_type("Google News Automotive") == "aggregator"
+
+    # Fallback to media for unknown
+    assert classify_source_type("Unrecognized Indie Car Blog") == "media"
+
+    # Fallback using feed metadata when provided
+    research_feed = SourceFeed(
+        name="Auto Research Hub",
+        bucket="technology",
+        url="https://example.com/research",
+        id="auto_research_hub",
+        source_type="research",
+        authority_score=85,
+    )
+    assert classify_source_type("Custom Lab", research_feed) == "research"
+
+    # Source authority property / fallback
+    entry = FeedEntry(
+        title="Sample Entry",
+        url="https://example.com/article",
+        source="Custom Lab",
+        bucket="technology",
+        authority_score=research_feed.authority_score,
+        source_type=research_feed.source_type,
+    )
+    assert entry.source_authority == 85
+    assert entry.source_type == "research"
+
+    articles, _ = collect_from_entries([entry])
+    assert articles[0].source_authority == 85
+    assert articles[0].source_type == "research"
+
+
+def test_collector_diagnostics_format():
+    feed_direct = SourceFeed(
+        name="Reuters",
+        bucket="big",
+        url="https://reuters.com/feed",
+        id="reuters",
+        source_type="media",
+        authority_score=95,
+    )
+    feed_agg = SourceFeed(
+        name="Google News",
+        bucket="big",
+        url="https://news.google.com/rss",
+        id="google_news",
+        source_type="aggregator",
+        authority_score=40,
+    )
+    feed_fail = SourceFeed(
+        name="ACEA",
+        bucket="policy",
+        url="https://acea.auto/feed",
+        id="acea",
+        source_type="regulator",
+        authority_score=95,
+    )
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            return None
+        def get(self, url):
+            class FakeResponse:
+                def __init__(self, url):
+                    self.status_code = 500 if "acea" in url else 200
+                    self.content = b"<rss></rss>"
+                def raise_for_status(self):
+                    if self.status_code >= 400:
+                        raise Exception("HTTP 500")
+            return FakeResponse(url)
+
+    class FakeParsed:
+        def __init__(self, url):
+            self.bozo = False
+            if "google" in url:
+                self.entries = [
+                    {
+                        "title": "Tesla updates autonomy roadmap - Reuters",
+                        "link": "https://news.google.com/articles/123",
+                    }
+                ]
+            elif "reuters" in url:
+                self.entries = [
+                    {
+                        "title": "Automakers report record profits",
+                        "link": "https://reuters.com/123",
+                    }
+                ]
+            else:
+                self.entries = []
+
+    import automotive_newsletter.collector as collector_module
+    old_client = collector_module._feed_client
+    import feedparser
+    old_parse = feedparser.parse
+    try:
+        collector_module._feed_client = FakeClient
+        feedparser.parse = lambda c: FakeParsed("google" if b"google" in c else ("acea" if b"acea" in c else "reuters"))
+        # We also need get() to return url-specific content:
+        class DynamicResponse:
+            def __init__(self, url):
+                self.url = url
+                self.status_code = 500 if "acea" in url else 200
+                self.content = url.encode()
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise Exception("HTTP 500")
+        class DynamicClient:
+            def __init__(self, *args, **kwargs): pass
+            def __enter__(self): return self
+            def __exit__(self, exc_type, exc, tb): return None
+            def get(self, url): return DynamicResponse(url)
+        collector_module._feed_client = DynamicClient
+
+        rows = check_feed_health(feeds=[feed_direct, feed_agg, feed_fail])
+        assert rows[0]["diagnostic"] == "OK  Reuters"
+        assert rows[1]["diagnostic"] == "OK  Google News → Reuters"
+        assert rows[2]["diagnostic"] == "FAIL ACEA"
+    finally:
+        collector_module._feed_client = old_client
+        feedparser.parse = old_parse
+
+

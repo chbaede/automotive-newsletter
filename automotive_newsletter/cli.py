@@ -74,13 +74,10 @@ def main(argv: list[str] | None = None) -> int:
         settings = load_settings()
         rows = check_feed_health(settings=settings)
         for row in rows:
-            state = "ok" if row["ok"] else "fail"
+            diag = row.get("diagnostic") or (f"OK  {row['name']}" if row["ok"] else f"FAIL {row['name']}")
             tls = " tls-fallback" if row["tls_fallback"] else ""
             error = f" {row['error']}" if row["error"] else ""
-            print(
-                f"{state:4} {row['entries']:>3} {row['bucket']:<11} "
-                f"{row['name']}{tls}{error}"
-            )
+            print(f"{diag}{tls}{error}")
         return 1 if any(not row["ok"] for row in rows) else 0
     if command == "schedule":
         settings = load_settings()

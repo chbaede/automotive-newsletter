@@ -16,6 +16,16 @@ class FeedEntry:
     publisher: str | None = None
     source_id: str | None = None
     authority_score: int | None = None
+    source_type: str = "media"
+    source_authority: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.source_authority is None:
+            self.source_authority = (
+                self.authority_score if self.authority_score is not None else 70
+            )
+        if self.authority_score is None:
+            self.authority_score = self.source_authority
 
 
 @dataclass(slots=True)
@@ -32,6 +42,16 @@ class Article:
     discovered_via: str | None = None
     source_id: str | None = None
     authority_score: int | None = None
+    source_type: str = "media"
+    source_authority: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.source_authority is None:
+            self.source_authority = (
+                self.authority_score if self.authority_score is not None else 70
+            )
+        if self.authority_score is None:
+            self.authority_score = self.source_authority
 
 
 @dataclass(slots=True)

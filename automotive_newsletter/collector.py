@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import re
 import time
 from dataclasses import replace
@@ -19,6 +20,7 @@ from .sources import (
     DEFAULT_FEEDS,
     SECTION_ORDER,
     SourceFeed,
+    classify_source_type,
     get_enabled_sources,
     get_source,
     source_authority,
@@ -27,7 +29,12 @@ from .sources import (
 from .store import NewsletterStore
 from .summarizer import classify_article
 
-TRACKING_PARAMS = {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id"}
+TRACKING_PARAMS = {
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
+    "fbclid", "gclid", "gclsrc", "dclid", "msclkid", "mc_cid", "mc_eid",
+    "igshid", "yclid", "_hsenc", "_hsmi", "ref", "ref_src", "ref_url",
+    "spjobid", "spmailingid", "spreportid",
+}
 REQUEST_HEADERS = {"User-Agent": "AutomotiveNewsletter/0.1 (+local research app)"}
 
 TITLE_STOP_WORDS = {
@@ -140,6 +147,8 @@ def collect_from_entries(
             discovered_via=entry.discovered_via,
             source_id=entry.source_id,
             authority_score=entry.authority_score,
+            source_type=entry.source_type,
+            source_authority=entry.source_authority,
         )
         articles.append(classify_article(article))
 
@@ -628,6 +637,9 @@ def fetch_feed_entries(
                 if not title or not url:
                     continue
                 publisher, discovered_via, authority = extract_source_and_publisher(raw, feed)
+                if publisher == "Unknown":
+                    warnings.append(f"{feed.name}: 출처(publisher) 식별 실패 - {clean_text(title, 60)}")
+                source_type = classify_source_type(publisher, feed)
                 excerpt = strip_html(raw.get("summary", "") or raw.get("description", ""))
                 published_at = _entry_date(raw)
                 resolved_url = (
@@ -651,6 +663,8 @@ def fetch_feed_entries(
                         publisher=publisher,
                         source_id=feed.id,
                         authority_score=authority,
+                        source_type=source_type,
+                        source_authority=authority,
                     )
                 )
                 time.sleep(0.02)
@@ -680,6 +694,7 @@ def check_feed_health(
                 "tls_fallback": False,
                 "error": "",
             }
+            parsed = None
             try:
                 response, used_tls_fallback = _get_with_tls_fallback(
                     feed.url,
@@ -702,36 +717,101 @@ def check_feed_health(
                     result["error"] = "피드 파싱 실패"
             except Exception as exc:
                 result["error"] = str(exc)
+
+            diagnostic_label = feed.name
+            if parsed and parsed.entries:
+                first_entry = parsed.entries[0]
+                pub, _, _ = extract_source_and_publisher(first_entry, feed)
+                if pub and pub != feed.name and pub != "Unknown":
+                    diagnostic_label = f"{feed.name} → {pub}"
+
+            result["diagnostic_label"] = diagnostic_label
+            state_str = "OK" if result["ok"] else "FAIL"
+            if result["ok"]:
+                result["diagnostic"] = f"{state_str}  {diagnostic_label}"
+            else:
+                result["diagnostic"] = f"{state_str} {diagnostic_label}"
+
             results.append(result)
     return results
 
 
+def unwrap_google_redirect(url: str) -> str:
+    if not url:
+        return ""
+    curr = unescape(url.strip())
+    for _ in range(5):
+        parts = urlsplit(curr)
+        host = parts.netloc.lower()
+        if not ("google." in host or host.endswith("google.com")):
+            break
+
+        # Check query parameters: continue, q, url
+        params = dict(parse_qsl(parts.query, keep_blank_values=True))
+        found = False
+        for key in ("continue", "q", "url"):
+            val = params.get(key, "")
+            if val and val.startswith(("http://", "https://")):
+                curr = val
+                found = True
+                break
+        if found:
+            continue
+
+        # Check base64 encoded token in /articles/ path
+        if "/articles/" in parts.path:
+            token = parts.path.split("/articles/")[-1].split("?")[0].split("/")[0]
+            if token.startswith("CBMi") or token.startswith("CBM"):
+                try:
+                    padded = token + "=" * (-len(token) % 4)
+                    decoded = base64.urlsafe_b64decode(padded)
+                    matches = re.findall(
+                        rb"https?://[a-zA-Z0-9_\-.~:/?#[\]@!$&\'()*+,;=%]+", decoded
+                    )
+                    if matches:
+                        curr = matches[0].decode("utf-8", errors="ignore")
+                        found = True
+                except Exception:
+                    pass
+        if not found:
+            break
+
+    return curr
+
+
 def resolve_original_url(url: str, timeout: float = 8.0) -> str:
-    consent_continue = _google_consent_continue(url)
+    unwrapped = unwrap_google_redirect(url)
+    if (
+        unwrapped != url
+        and "news.google.com" not in unwrapped
+        and not urlsplit(unwrapped).netloc.lower().endswith("google.com")
+    ):
+        return unwrapped
+    consent_continue = _google_consent_continue(unwrapped)
     if consent_continue:
         if "news.google.com" in consent_continue:
             return resolve_original_url(consent_continue, timeout=timeout)
         return consent_continue
-    if "news.google.com" not in url:
-        return url
+    if "news.google.com" not in unwrapped:
+        return unwrapped
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True, verify=True) as client:
-            response = client.get(url, headers={"User-Agent": _user_agent()})
+            response = client.get(unwrapped, headers={"User-Agent": _user_agent()})
         if response.url and not is_intermediary_url(str(response.url)):
             return str(response.url)
     except httpx.ConnectError as exc:
         if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
-            return url
+            return unwrapped
         try:
             with httpx.Client(timeout=timeout, follow_redirects=True, verify=False) as client:
-                response = client.get(url, headers={"User-Agent": _user_agent()})
+                response = client.get(unwrapped, headers={"User-Agent": _user_agent()})
             if response.url and not is_intermediary_url(str(response.url)):
                 return str(response.url)
         except httpx.HTTPError:
-            return url
+            return unwrapped
     except httpx.HTTPError:
-        return url
-    return url
+        return unwrapped
+    return unwrapped
 
 
 def _google_consent_continue(url: str) -> str:
@@ -766,21 +846,32 @@ def fetch_article_excerpt(url: str, timeout: float = 8.0) -> str:
 
 
 def canonicalize_url(url: str) -> str:
-    parts = urlsplit(unescape(url.strip()))
-    query = [
-        (key, value)
-        for key, value in parse_qsl(parts.query, keep_blank_values=True)
-        if key not in TRACKING_PARAMS and not key.startswith("utm_")
+    if not url:
+        return ""
+    unwrapped = unwrap_google_redirect(url)
+    parts = urlsplit(unescape(unwrapped.strip()))
+    scheme = parts.scheme.lower() or "https"
+    netloc = parts.netloc.lower().rstrip(".")
+    if ":" in netloc:
+        host, port = netloc.split(":", 1)
+        if (scheme == "https" and port == "443") or (scheme == "http" and port == "80"):
+            netloc = host
+
+    path = parts.path
+    if path != "/":
+        path = path.rstrip("/")
+    if not path:
+        path = "/"
+    path = re.sub(r"/{2,}", "/", path)
+
+    query_items = [
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if k.lower() not in TRACKING_PARAMS and not k.lower().startswith("utm_")
     ]
-    return urlunsplit(
-        (
-            parts.scheme,
-            parts.netloc.lower(),
-            parts.path.rstrip("/") or parts.path,
-            urlencode(query),
-            "",
-        )
-    )
+    query_items.sort(key=lambda item: (item[0], item[1]))
+    query_str = urlencode(query_items)
+    return urlunsplit((scheme, netloc, path, query_str, ""))
 
 
 def is_intermediary_url(url: str) -> bool:
@@ -821,28 +912,76 @@ def extract_source_and_publisher(raw: object, feed: SourceFeed) -> tuple[str, st
         cand = str(source_attr["title"]).strip()
         if cand and cand.lower() not in {"google news", "google"}:
             publisher = cand
+    elif isinstance(source_attr, str) and source_attr.strip():
+        cand = source_attr.strip()
+        if cand.lower() not in {"google news", "google"}:
+            publisher = cand
     elif hasattr(raw, "get"):
         raw_src = raw.get("source", {})  # type: ignore[attr-defined]
         if isinstance(raw_src, dict) and raw_src.get("title"):
             cand = str(raw_src["title"]).strip()
             if cand and cand.lower() not in {"google news", "google"}:
                 publisher = cand
+        elif isinstance(raw_src, str) and raw_src.strip():
+            cand = raw_src.strip()
+            if cand.lower() not in {"google news", "google"}:
+                publisher = cand
 
     if not publisher and is_aggregator:
-        raw_title = getattr(raw, "title", "") or (raw.get("title", "") if hasattr(raw, "get") else "")
-        m = re.search(r"\s+-\s+([^-]+)$", str(raw_title))
+        raw_title = getattr(raw, "title", "") or (
+            raw.get("title", "") if hasattr(raw, "get") else ""
+        )
+        m = re.search(r"\s+[-|–—]\s+([^-|–—]+)$", str(raw_title))
         if m:
             cand = m.group(1).strip()
             if cand and cand.lower() not in {"google news", "google"}:
                 publisher = cand
 
-    if not publisher:
-        publisher = feed.name
+    if not publisher and is_aggregator:
+        link = getattr(raw, "link", None) or (
+            raw.get("link", "") if hasattr(raw, "get") else ""
+        )
+        if link:
+            unwrapped = unwrap_google_redirect(str(link))
+            domain = urlsplit(unwrapped).netloc.lower()
+            if domain and not ("google." in domain or domain.endswith("google.com")):
+                if domain.endswith("reuters.com"):
+                    publisher = "Reuters"
+                elif domain.endswith("bloomberg.com"):
+                    publisher = "Bloomberg"
+                elif domain.endswith("autonews.com"):
+                    publisher = "Automotive News"
+                elif domain.endswith("electrek.co"):
+                    publisher = "Electrek"
+                elif domain.endswith("insideevs.com"):
+                    publisher = "InsideEVs"
+                elif domain.endswith("theverge.com"):
+                    publisher = "The Verge"
+                elif domain.endswith("techcrunch.com"):
+                    publisher = "TechCrunch"
+                elif domain.endswith("motorgraph.com"):
+                    publisher = "모터그래프"
+                elif domain.endswith("autodaily.co.kr"):
+                    publisher = "오토데일리"
+                elif domain.endswith("autoherald.co.kr"):
+                    publisher = "오토헤럴드"
+                elif domain.endswith("etnews.com"):
+                    publisher = "전자신문"
+                elif domain.endswith("yna.co.kr"):
+                    publisher = "연합뉴스"
 
-    if publisher != feed.name:
+    if not publisher:
+        if is_aggregator:
+            publisher = "Unknown"
+        else:
+            publisher = feed.name
+
+    if publisher and publisher != feed.name and publisher != "Unknown":
         authority = source_authority(publisher)
-    else:
+    elif feed.authority_score is not None:
         authority = feed.authority_score
+    else:
+        authority = source_authority(publisher or feed.name)
 
     return publisher, discovered_via, authority
 

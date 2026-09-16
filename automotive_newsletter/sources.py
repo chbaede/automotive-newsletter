@@ -450,6 +450,110 @@ def source_authority(source_id: str) -> int:
     return 70
 
 
+def classify_source_type(name: str, feed: SourceFeed | None = None) -> str:
+    cleaned = re.sub(r"[^a-z0-9가-힣]+", " ", name.lower()).strip()
+
+    if any(
+        term in cleaned
+        for term in [
+            "nhtsa",
+            "dot gov",
+            "epa gov",
+            "acea",
+            "unece",
+            "euro ncap",
+            "iihs",
+            "regulator",
+            "safety commission",
+        ]
+    ):
+        return "regulator"
+    if any(
+        term in cleaned
+        for term in [
+            "institution",
+            "association",
+            "federation",
+            "institute",
+            "ieee",
+            "iso",
+            "kama",
+            "oecd",
+            "협회",
+            "학회",
+            "연구원",
+        ]
+    ):
+        return "institution"
+    if any(
+        term in cleaned
+        for term in [
+            "mckinsey",
+            "s p global",
+            "gartner",
+            "cox automotive",
+            "j d power",
+            "jd power",
+            "sae",
+            "research",
+            "analyst",
+        ]
+    ):
+        return "research"
+    if any(
+        term in cleaned
+        for term in [
+            "pr newswire",
+            "business wire",
+            "globe newswire",
+            "newsfile",
+            "press release",
+        ]
+    ):
+        return "press_release"
+    if any(
+        term in cleaned
+        for term in ["eclipse", "autoware", "linux foundation", "agl", "autosar", "open source"]
+    ):
+        return "open_source"
+    if any(
+        term in cleaned
+        for term in [
+            "toyota",
+            "hyundai",
+            "kia",
+            "gm",
+            "general motors",
+            "ford",
+            "stellantis",
+            "bmw",
+            "mercedes",
+            "tesla",
+            "volkswagen",
+            "byd",
+            "bosch",
+            "continental",
+            "denso",
+            "magna",
+            "zf",
+            "valeo",
+            "aptiv",
+            "mobis",
+            "catl",
+            "공식 뉴스룸",
+            "official newsroom",
+        ]
+    ):
+        return "official"
+    if any(term in cleaned for term in ["google news", "aggregator", "news aggregator"]):
+        return "aggregator"
+
+    if feed is not None and feed.source_type != "aggregator":
+        return feed.source_type
+
+    return "media"
+
+
 SECTION_LABELS_EN = {
     "big": "Top News",
     "oem": "OEM Trends",
