@@ -11,6 +11,7 @@ import httpx
 
 from .models import Article
 from .prompts import SUMMARIZATION_SYSTEM_PROMPT, build_user_prompt
+from .scoring import compute_multi_dimensional_scores
 from .taxonomy import CATEGORY_LABELS_EN, classify_taxonomy
 
 logger = logging.getLogger(__name__)
@@ -300,10 +301,7 @@ def classify_article(
     # Unified tags preserving entities and topics
     tags = entities + [t for t in topics if t not in entities]
 
-    text = f"{article.title} {article.excerpt} {article.source}".lower()
-    score = _score_article(article, category, tags, text)
-
-    classified_article = replace(
+    tax_article = replace(
         article,
         category=category,
         primary_category=primary_category,
@@ -311,10 +309,20 @@ def classify_article(
         tags=tags,
         topics=topics,
         entities=entities,
+        content=content or article.content,
+    )
+    multi_scores = compute_multi_dimensional_scores(tax_article)
+    score = multi_scores.priority_score
+
+    classified_article = replace(
+        tax_article,
         score=score,
         priority_score=score,
-        source_score=float(article.source_authority),
-        content=content or article.content,
+        source_score=multi_scores.source_score,
+        relevance_score=multi_scores.relevance_score,
+        impact_score=multi_scores.impact_score,
+        novelty_score=multi_scores.novelty_score,
+        recency_score=multi_scores.recency_score,
     )
 
     summarizer_inst = summarizer or TemplateSummarizer()
@@ -370,24 +378,18 @@ def _extract_tags(text: str) -> list[str]:
     return found[:8]
 
 
-def _score_article(article: Article, category: str, tags: list[str], lowered: str) -> float:
-    score = 35.0
-    score += {
-        "big": 10,
-        "oem": 15,
-        "tier1": 15,
-        "sdv": 25,
-        "institution": 12,
-        "conference": 8,
-    }.get(category, 0)
-    score += min(len(tags), 5) * 4
-    if any(word in lowered for word in ["billion", "investment", "partnership", "launch", "recall"]):
-        score += 8
-    if any(word in lowered for word in ["reuters", "automotive news", "bloomberg", "wardsauto"]):
-        score += 6
-    if article.published_at is not None:
-        score += 5
-    return round(score, 2)
+def _score_article(
+    article: Article,
+    category: str = "",
+    tags: list[str] | None = None,
+    lowered: str = "",
+) -> float:
+    candidate = replace(
+        article,
+        category=category or article.category,
+        tags=tags if tags is not None else article.tags,
+    )
+    return compute_multi_dimensional_scores(candidate).priority_score
 
 
 def _business_signal(article: Article) -> str:

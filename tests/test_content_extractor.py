@@ -95,3 +95,4 @@ def test_extract_usable_article_text_fallback_on_short_summary():
     )
     assert extracted.is_short_excerpt is True
     assert "Brief 10-word teaser" in extracted.text
+

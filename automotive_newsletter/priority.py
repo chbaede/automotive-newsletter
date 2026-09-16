@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 
 from .models import Article, NewsletterIssue
+from .scoring import compute_multi_dimensional_scores
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,6 +16,8 @@ class PrioritySignal:
     score: int
     reason_ko: str
     reason_en: str
+    bullet_reasons_ko: list[str] = field(default_factory=list)
+    bullet_reasons_en: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,99 +39,68 @@ LEVELS = {
     "watch": ("관찰", "Watch", 1),
 }
 
-ISSUE_KEYWORDS = {
-    "recall": "품질/리콜",
-    "investigation": "조사/규제",
-    "probe": "조사/규제",
-    "regulator": "규제",
-    "tariff": "정책/관세",
-    "strike": "생산차질",
-    "halt": "생산차질",
-    "bankruptcy": "재무 리스크",
-    "investment": "투자",
-    "billion": "대규모 자금",
-    "partnership": "전략 제휴",
-    "joint venture": "전략 제휴",
-    "software-defined": "SDV",
-    "software defined": "SDV",
-    "zonal": "SDV",
-    "ota": "OTA",
-    "robotaxi": "자율주행",
-    "autonomous": "자율주행",
-}
 
-AUTHORITY_SOURCES = [
-    "reuters",
-    "bloomberg",
-    "automotive news",
-    "wardsauto",
-    "mckinsey",
-    "s&p global",
-    "sae",
-    "j.d. power",
-    "cox automotive",
-]
-
-
-def assess_priority(article: Article) -> PrioritySignal:
-    raw_score = int(round(article.score))
-    issue_reasons = _issue_reasons(article)
-    authority = (
-        any(source in article.source.lower() for source in AUTHORITY_SOURCES)
-        or (article.source_authority is not None and article.source_authority >= 85)
-        or article.is_official
-    )
-    category_weight = 8 if article.category in {"big", "oem", "tier1", "sdv"} else 0
-    tag_weight = min(len(article.tags), 4) * 2
-    issue_weight = min(len(issue_reasons), 3) * 7
-    authority_weight = 6 if authority else 0
-    priority_score = min(
-        100, raw_score + category_weight + tag_weight + issue_weight + authority_weight
+def assess_priority(
+    article: Article,
+    past_articles: list[Article] | None = None,
+    ref_time: datetime | None = None,
+    half_life_hours: float = 36.0,
+) -> PrioritySignal:
+    scores = compute_multi_dimensional_scores(
+        article,
+        past_articles=past_articles,
+        ref_time=ref_time,
+        half_life_hours=half_life_hours,
     )
 
-    article.source_score = float(
-        article.source_authority
-        if article.source_authority is not None
-        else (90 if authority else 70)
-    )
-    article.relevance_score = float(
-        min(100, category_weight * 5 + tag_weight * 5 + (20 if article.is_official else 10))
-    )
-    article.impact_score = float(min(100, issue_weight * 4 + category_weight * 4))
-    article.priority_score = float(priority_score)
+    article.source_score = scores.source_score
+    article.relevance_score = scores.relevance_score
+    article.impact_score = scores.impact_score
+    article.novelty_score = scores.novelty_score
+    article.recency_score = scores.recency_score
 
-    if priority_score >= 86:
+    priority_score = scores.priority_score
+    raw_score = article.score
+
+    if raw_score > 0:
+        if raw_score <= 40.0:
+            priority_score = min(priority_score, raw_score)
+        elif raw_score >= 80.0:
+            priority_score = max(priority_score, raw_score)
+        elif raw_score >= 60.0:
+            priority_score = max(priority_score, raw_score)
+        else:
+            priority_score = 0.5 * priority_score + 0.5 * raw_score
+
+    if scores.impact_score >= 65.0 and scores.source_score >= 85.0:
+        priority_score = max(priority_score, 82.0)
+    elif scores.relevance_score >= 80.0 and scores.impact_score >= 45.0:
+        priority_score = max(priority_score, 82.0)
+
+    article.priority_score = round(priority_score, 1)
+    article.score = article.priority_score
+
+    if priority_score >= 80.0:
         level = "critical"
-    elif priority_score >= 70:
+    elif priority_score >= 60.0:
         level = "high"
-    elif priority_score >= 52:
+    elif priority_score >= 45.0:
         level = "medium"
     else:
         level = "watch"
 
     label = LEVELS[level][0]
     label_en = LEVELS[level][1]
-    reason_parts_ko = []
-    reason_parts_en = []
-    if issue_reasons:
-        reason_parts_ko.append("이슈화 신호: " + ", ".join(issue_reasons[:3]))
-        reason_parts_en.append("Issue Signal: " + ", ".join(issue_reasons[:3])) # ISSUE_KEYWORDS values are currently Korean. Let's not translate values yet or we translate them too. Actually let's just make it simple.
-    if authority:
-        reason_parts_ko.append("권위 출처")
-        reason_parts_en.append("Authority Source")
-    if article.category in {"big", "oem", "tier1", "sdv"}:
-        reason_parts_ko.append("산업 영향 섹션")
-        reason_parts_en.append("Industry Impact")
-    if not reason_parts_ko:
-        reason_parts_ko.append("낮은 점수 또는 참고성 항목")
-        reason_parts_en.append("Low Score or Reference")
+
     return PrioritySignal(
         level=level,
         label_ko=label,
         label_en=label_en,
-        score=priority_score,
-        reason_ko=" · ".join(reason_parts_ko),
-        reason_en=" · ".join(reason_parts_en),
+        score=int(round(priority_score)),
+        reason_ko=scores.explanation.summary_ko,
+        reason_en=scores.explanation.summary_en,
+        bullet_reasons_ko=scores.explanation.reasons_ko,
+        bullet_reasons_en=scores.explanation.reasons_en,
     )
 
 

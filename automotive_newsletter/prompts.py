@@ -56,3 +56,4 @@ def build_user_prompt(
     prompt_lines.append("\nGenerate the JSON summary strictly following the factual integrity rules:")
 
     return "\n".join(prompt_lines)
+

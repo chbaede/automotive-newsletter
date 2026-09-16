@@ -194,3 +194,4 @@ def _is_intermediary(url: str) -> bool:
     parsed = urlparse(url)
     host = parsed.netloc.lower()
     return host.endswith("google.com") or host.endswith("news.google.com")
+

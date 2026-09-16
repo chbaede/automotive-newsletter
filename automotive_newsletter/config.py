@@ -37,6 +37,7 @@ class Settings:
     ollama_timeout: float = 30.0
     enable_ai_summary: bool = False
     content_fetch_timeout: float = 6.0
+    recency_half_life_hours: float = 36.0
 
     @property
     def recipients(self) -> list[str]:
@@ -77,6 +78,7 @@ def load_settings() -> Settings:
         ollama_timeout=float(os.getenv("OLLAMA_TIMEOUT", "30.0")),
         enable_ai_summary=_bool_env("ENABLE_AI_SUMMARY", False),
         content_fetch_timeout=float(os.getenv("CONTENT_FETCH_TIMEOUT", "6.0")),
+        recency_half_life_hours=float(os.getenv("RECENCY_HALF_LIFE_HOURS", "36.0")),
     )
 
 
