@@ -12,6 +12,10 @@ class FeedEntry:
     bucket: str
     published_at: datetime | None = None
     excerpt: str = ""
+    discovered_via: str | None = None
+    publisher: str | None = None
+    source_id: str | None = None
+    authority_score: int | None = None
 
 
 @dataclass(slots=True)
@@ -25,6 +29,9 @@ class Article:
     excerpt: str = ""
     tags: list[str] = field(default_factory=list)
     score: float = 0
+    discovered_via: str | None = None
+    source_id: str | None = None
+    authority_score: int | None = None
 
 
 @dataclass(slots=True)

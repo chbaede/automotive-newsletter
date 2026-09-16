@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from urllib.parse import quote_plus
 
@@ -16,11 +17,74 @@ SECTION_LABELS = {
 SECTION_ORDER = ["big", "oem", "tier1", "sdv", "institution", "conference"]
 
 
+AUTHORITY_HIERARCHY: dict[str, int] = {
+    "regulator": 100,
+    "news_agency": 95,
+    "industry_media": 90,
+    "specialist_media": 85,
+    "research": 80,
+    "tech_media": 75,
+    "official": 70,
+    "event": 70,
+    "open_source": 85,
+    "institution": 80,
+    "media": 85,
+    "press_release": 60,
+    "aggregator": 40,
+}
+
+KNOWN_PUBLISHER_AUTHORITY: dict[str, int] = {
+    "reuters": 95,
+    "bloomberg": 95,
+    "associated press": 95,
+    "ap": 95,
+    "automotive news": 90,
+    "automotive news europe": 90,
+    "automotive world": 90,
+    "wardsauto": 90,
+    "just auto": 90,
+    "justauto": 90,
+    "automotive dive": 90,
+    "the drive": 85,
+    "electrek": 85,
+    "insideevs": 85,
+    "motor1": 85,
+    "car and driver": 85,
+    "automotive testing technology international": 85,
+    "techcrunch": 75,
+    "the verge": 75,
+    "nhtsa": 100,
+    "acea": 100,
+    "unece": 100,
+    "euro ncap": 100,
+    "s&p global mobility": 80,
+    "mckinsey": 80,
+    "gartner": 80,
+    "sae international": 80,
+    "sae": 80,
+    "pr newswire": 60,
+    "business wire": 60,
+    "globe newswire": 60,
+}
+
+
 @dataclass(frozen=True, slots=True)
 class SourceFeed:
     name: str
     bucket: str
     url: str
+    id: str = ""
+    source_type: str = "media"
+    authority_score: int = 70
+    region: str = "global"
+    language: str = "en"
+    paywalled: bool = False
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            slug = re.sub(r"[^a-z0-9]+", "_", self.name.lower()).strip("_")
+            object.__setattr__(self, "id", slug)
 
 
 def google_news_rss(query: str) -> str:
@@ -35,137 +99,356 @@ def google_news_kr_rss(query: str) -> str:
 
 DEFAULT_FEEDS = [
     SourceFeed(
-        "Automotive News",
-        "big",
-        "https://www.autonews.com/arc/outboundfeeds/rss/?outputType=xml",
+        name="Automotive News",
+        bucket="big",
+        url="https://www.autonews.com/arc/outboundfeeds/rss/?outputType=xml",
+        id="automotive_news",
+        source_type="media",
+        authority_score=90,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "Automotive News Europe",
-        "oem",
-        "https://europe.autonews.com/arc/outboundfeeds/rss/?outputType=xml",
+        name="Automotive News Europe",
+        bucket="oem",
+        url="https://europe.autonews.com/arc/outboundfeeds/rss/?outputType=xml",
+        id="automotive_news_europe",
+        source_type="media",
+        authority_score=90,
+        region="europe",
+        language="en",
     ),
     SourceFeed(
-        "Automotive World",
-        "big",
-        "https://www.automotiveworld.com/feed/",
+        name="Automotive World",
+        bucket="big",
+        url="https://www.automotiveworld.com/feed/",
+        id="automotive_world",
+        source_type="media",
+        authority_score=90,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "WardsAuto",
-        "big",
-        "https://www.wardsauto.com/feeds/news/",
+        name="WardsAuto",
+        bucket="big",
+        url="https://www.wardsauto.com/feeds/news/",
+        id="wardsauto",
+        source_type="media",
+        authority_score=90,
+        region="us",
+        language="en",
     ),
     SourceFeed(
-        "PR Newswire Automotive",
-        "big",
-        "https://www.prnewswire.com/rss/automotive-transportation/automotive-list.rss",
+        name="PR Newswire Automotive",
+        bucket="big",
+        url="https://www.prnewswire.com/rss/automotive-transportation/automotive-list.rss",
+        id="pr_newswire_automotive",
+        source_type="press_release",
+        authority_score=60,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "Global automotive big news",
-        "big",
-        google_news_rss(
+        name="Global automotive big news",
+        bucket="big",
+        url=google_news_rss(
             'automotive industry OR automaker OR "electric vehicle" OR SDV Reuters OR Bloomberg'
         ),
+        id="global_automotive_big_news",
+        source_type="aggregator",
+        authority_score=40,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "Korea Auto News",
-        "big",
-        google_news_kr_rss(
+        name="Korea Auto News",
+        bucket="big",
+        url=google_news_kr_rss(
             "현대차 OR 기아 OR 한국GM OR 르노코리아 OR 자동차 배터리 OR 자율주행 OR SDV"
         ),
+        id="korea_auto_news",
+        source_type="aggregator",
+        authority_score=40,
+        region="kr",
+        language="ko",
     ),
     SourceFeed(
-        "InsideEVs",
-        "oem",
-        "https://insideevs.com/rss/news/all/",
+        name="InsideEVs",
+        bucket="oem",
+        url="https://insideevs.com/rss/news/all/",
+        id="insideevs",
+        source_type="media",
+        authority_score=85,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "Car and Driver News",
-        "oem",
-        "https://www.caranddriver.com/rss/news.xml",
+        name="Car and Driver News",
+        bucket="oem",
+        url="https://www.caranddriver.com/rss/news.xml",
+        id="car_and_driver",
+        source_type="media",
+        authority_score=85,
+        region="us",
+        language="en",
     ),
     SourceFeed(
-        "Motor1 News",
-        "oem",
-        "https://www.motor1.com/rss/news/all/",
+        name="Motor1 News",
+        bucket="oem",
+        url="https://www.motor1.com/rss/news/all/",
+        id="motor1",
+        source_type="media",
+        authority_score=85,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "The Drive",
-        "oem",
-        "https://www.thedrive.com/feed",
+        name="The Drive",
+        bucket="oem",
+        url="https://www.thedrive.com/feed",
+        id="the_drive",
+        source_type="media",
+        authority_score=85,
+        region="us",
+        language="en",
     ),
     SourceFeed(
-        "OEM strategy",
-        "oem",
-        google_news_rss(
+        name="OEM strategy",
+        bucket="oem",
+        url=google_news_rss(
             "Toyota OR Volkswagen OR Hyundai OR Kia OR GM OR Ford OR Stellantis OR BMW OR Mercedes OR Tesla OR BYD strategy OR EV"
         ),
+        id="oem_strategy",
+        source_type="aggregator",
+        authority_score=40,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "JustAuto",
-        "tier1",
-        "https://www.just-auto.com/feed/",
+        name="JustAuto",
+        bucket="tier1",
+        url="https://www.just-auto.com/feed/",
+        id="just_auto",
+        source_type="media",
+        authority_score=90,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "Automotive Dive",
-        "tier1",
-        "https://www.automotivedive.com/feeds/news/",
+        name="Automotive Dive",
+        bucket="tier1",
+        url="https://www.automotivedive.com/feeds/news/",
+        id="automotive_dive",
+        source_type="media",
+        authority_score=90,
+        region="us",
+        language="en",
     ),
     SourceFeed(
-        "Tier 1 suppliers",
-        "tier1",
-        google_news_rss(
+        name="Tier 1 suppliers",
+        bucket="tier1",
+        url=google_news_rss(
             'Bosch OR Continental OR Denso OR Magna OR ZF OR "Hyundai Mobis" OR Aptiv automotive'
         ),
+        id="tier1_suppliers",
+        source_type="aggregator",
+        authority_score=40,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "Electrek",
-        "sdv",
-        "https://electrek.co/feed/",
+        name="Electrek",
+        bucket="sdv",
+        url="https://electrek.co/feed/",
+        id="electrek",
+        source_type="media",
+        authority_score=85,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "TechCrunch Transportation",
-        "sdv",
-        "https://techcrunch.com/category/transportation/feed/",
+        name="TechCrunch Transportation",
+        bucket="sdv",
+        url="https://techcrunch.com/category/transportation/feed/",
+        id="techcrunch_transportation",
+        source_type="media",
+        authority_score=75,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "The Verge Transportation",
-        "sdv",
-        "https://www.theverge.com/rss/transportation/index.xml",
+        name="The Verge Transportation",
+        bucket="sdv",
+        url="https://www.theverge.com/rss/transportation/index.xml",
+        id="the_verge_transportation",
+        source_type="media",
+        authority_score=75,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "Automotive Testing Technology International",
-        "sdv",
-        "https://www.automotivetestingtechnologyinternational.com/feed",
+        name="Automotive Testing Technology International",
+        bucket="sdv",
+        url="https://www.automotivetestingtechnologyinternational.com/feed",
+        id="atti",
+        source_type="media",
+        authority_score=85,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "SDV software",
-        "sdv",
-        google_news_rss(
+        name="SDV software",
+        bucket="sdv",
+        url=google_news_rss(
             '"software-defined vehicle" OR SDV OR "autonomous driving" OR "zonal architecture" OR AUTOSAR'
         ),
+        id="sdv_software",
+        source_type="aggregator",
+        authority_score=40,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "Regulators and safety",
-        "institution",
-        google_news_rss(
+        name="Regulators and safety",
+        bucket="institution",
+        url=google_news_rss(
             'NHTSA OR "Euro NCAP" OR "European Commission" OR ACEA vehicle OR automotive safety OR emissions OR tariff'
         ),
+        id="regulators_and_safety",
+        source_type="aggregator",
+        authority_score=40,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "Institutions and magazines",
-        "institution",
-        google_news_rss(
+        name="Institutions and magazines",
+        bucket="institution",
+        url=google_news_rss(
             '"S&P Global Mobility" OR McKinsey OR Gartner OR "SAE International" automotive'
         ),
+        id="institutions_and_magazines",
+        source_type="aggregator",
+        authority_score=40,
+        region="global",
+        language="en",
     ),
     SourceFeed(
-        "Automotive conferences",
-        "conference",
-        google_news_rss(
+        name="Automotive conferences",
+        bucket="conference",
+        url=google_news_rss(
             '"IAA Mobility" OR "SAE WCX" OR "Auto Shanghai" OR "Japan Mobility Show" OR "Automotive World" OR "CES automotive" when:30d'
         ),
+        id="automotive_conferences",
+        source_type="event",
+        authority_score=70,
+        region="global",
+        language="en",
     ),
 ]
+
+EXTRA_SOURCES: list[SourceFeed] = [
+    SourceFeed(
+        name="Reuters Automotive",
+        bucket="big",
+        url=google_news_rss("Reuters automotive OR vehicle"),
+        id="reuters",
+        source_type="media",
+        authority_score=95,
+        region="global",
+        language="en",
+    ),
+    SourceFeed(
+        name="ACEA (European Automobile Manufacturers’ Association)",
+        bucket="institution",
+        url=google_news_rss("site:acea.auto automotive"),
+        id="acea",
+        source_type="regulator",
+        authority_score=100,
+        region="europe",
+        language="en",
+    ),
+    SourceFeed(
+        name="UNECE WP.29 Vehicle Regulations",
+        bucket="institution",
+        url=google_news_rss("UNECE vehicle regulations OR WP.29"),
+        id="unece",
+        source_type="regulator",
+        authority_score=100,
+        region="global",
+        language="en",
+    ),
+    SourceFeed(
+        name="Eclipse SDV",
+        bucket="sdv",
+        url=google_news_rss('"Eclipse SDV" OR "Eclipse Foundation" automotive'),
+        id="eclipse_sdv",
+        source_type="open_source",
+        authority_score=85,
+        region="global",
+        language="en",
+    ),
+]
+
+ALL_SOURCES: list[SourceFeed] = [*DEFAULT_FEEDS, *EXTRA_SOURCES]
+
+
+def _normalize_source_key(key: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
+
+
+def get_source(source_id: str) -> SourceFeed | None:
+    target = _normalize_source_key(source_id)
+    for feed in ALL_SOURCES:
+        if (
+            feed.id == source_id
+            or _normalize_source_key(feed.id) == target
+            or _normalize_source_key(feed.name) == target
+        ):
+            return feed
+    return None
+
+
+def get_enabled_sources() -> list[SourceFeed]:
+    return [feed for feed in DEFAULT_FEEDS if feed.enabled]
+
+
+def source_metadata(source_id: str) -> dict[str, object] | None:
+    source = get_source(source_id)
+    if source is None:
+        return None
+    return {
+        "id": source.id,
+        "name": source.name,
+        "bucket": source.bucket,
+        "url": source.url,
+        "source_type": source.source_type,
+        "authority_score": source.authority_score,
+        "region": source.region,
+        "language": source.language,
+        "paywalled": source.paywalled,
+        "enabled": source.enabled,
+    }
+
+
+def source_authority(source_id: str) -> int:
+    source = get_source(source_id)
+    if source is not None:
+        return source.authority_score
+
+    cleaned = re.sub(r"[^a-z0-9]+", " ", source_id.lower()).strip()
+    if cleaned in KNOWN_PUBLISHER_AUTHORITY:
+        return KNOWN_PUBLISHER_AUTHORITY[cleaned]
+
+    for key, val in KNOWN_PUBLISHER_AUTHORITY.items():
+        if key in cleaned or cleaned in key:
+            return val
+
+    slug = re.sub(r"[^a-z0-9]+", "_", source_id.lower()).strip("_")
+    if slug in AUTHORITY_HIERARCHY:
+        return AUTHORITY_HIERARCHY[slug]
+
+    return 70
+
 
 SECTION_LABELS_EN = {
     "big": "Top News",

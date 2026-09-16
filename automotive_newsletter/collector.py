@@ -15,7 +15,15 @@ from bs4 import BeautifulSoup
 
 from .config import Settings, load_settings
 from .models import Article, FeedEntry, NewsletterIssue
-from .sources import DEFAULT_FEEDS, SECTION_ORDER, SourceFeed
+from .sources import (
+    DEFAULT_FEEDS,
+    SECTION_ORDER,
+    SourceFeed,
+    get_enabled_sources,
+    get_source,
+    source_authority,
+    source_metadata,
+)
 from .store import NewsletterStore
 from .summarizer import classify_article
 
@@ -125,10 +133,13 @@ def collect_from_entries(
         article = Article(
             title=clean_text(entry.title, 240),
             url=canonical_url,
-            source=clean_text(entry.source, 80) or "Unknown",
+            source=clean_text(entry.publisher or entry.source, 80) or "Unknown",
             category=entry.bucket,
             published_at=entry.published_at,
             excerpt=clean_text(entry.excerpt, 420),
+            discovered_via=entry.discovered_via,
+            source_id=entry.source_id,
+            authority_score=entry.authority_score,
         )
         articles.append(classify_article(article))
 
@@ -181,7 +192,8 @@ def collect_and_store(
     store = store or NewsletterStore(settings.db_path)
     issue_date = issue_date or date.today().isoformat()
     recent_articles = store.get_recent_articles(before_issue_date=issue_date, days=7)
-    entries, warnings = fetch_feed_entries(feeds or DEFAULT_FEEDS, settings=settings)
+    feeds_to_fetch = feeds if feeds is not None else get_enabled_sources()
+    entries, warnings = fetch_feed_entries(feeds_to_fetch, settings=settings)
     articles = build_issue_articles(entries, recent_articles=recent_articles)
     articles = ensure_required_fallbacks(articles, issue_date=issue_date)
     if not articles and warnings:
@@ -590,6 +602,8 @@ def fetch_feed_entries(
         settings, verify=False
     ) as insecure_client:
         for feed in feeds:
+            if not feed.enabled:
+                continue
             try:
                 response, used_tls_fallback = _get_with_tls_fallback(
                     feed.url,
@@ -613,7 +627,7 @@ def fetch_feed_entries(
                 url = raw.get("link", "")
                 if not title or not url:
                     continue
-                source = _entry_source(raw, feed)
+                publisher, discovered_via, authority = extract_source_and_publisher(raw, feed)
                 excerpt = strip_html(raw.get("summary", "") or raw.get("description", ""))
                 published_at = _entry_date(raw)
                 resolved_url = (
@@ -629,10 +643,14 @@ def fetch_feed_entries(
                     FeedEntry(
                         title=title,
                         url=resolved_url,
-                        source=source,
+                        source=publisher,
                         bucket=feed.bucket,
                         published_at=published_at,
                         excerpt=excerpt,
+                        discovered_via=discovered_via,
+                        publisher=publisher,
+                        source_id=feed.id,
+                        authority_score=authority,
                     )
                 )
                 time.sleep(0.02)
@@ -649,9 +667,13 @@ def check_feed_health(
     ) as insecure_client:
         for feed in feeds or DEFAULT_FEEDS:
             result: dict[str, object] = {
+                "id": feed.id,
                 "name": feed.name,
                 "bucket": feed.bucket,
                 "url": feed.url,
+                "source_type": feed.source_type,
+                "authority_score": feed.authority_score,
+                "enabled": feed.enabled,
                 "ok": False,
                 "status_code": None,
                 "entries": 0,
@@ -785,15 +807,49 @@ def clean_text(value: str, limit: int = 240) -> str:
     return value[: limit - 1].rstrip() + "…"
 
 
+def extract_source_and_publisher(raw: object, feed: SourceFeed) -> tuple[str, str, int]:
+    is_aggregator = (
+        feed.source_type == "aggregator"
+        or "google.com" in feed.url
+        or "Google News" in feed.name
+    )
+    discovered_via = "Google News" if is_aggregator else feed.name
+    publisher = ""
+
+    source_attr = getattr(raw, "source", None)
+    if isinstance(source_attr, dict) and source_attr.get("title"):
+        cand = str(source_attr["title"]).strip()
+        if cand and cand.lower() not in {"google news", "google"}:
+            publisher = cand
+    elif hasattr(raw, "get"):
+        raw_src = raw.get("source", {})  # type: ignore[attr-defined]
+        if isinstance(raw_src, dict) and raw_src.get("title"):
+            cand = str(raw_src["title"]).strip()
+            if cand and cand.lower() not in {"google news", "google"}:
+                publisher = cand
+
+    if not publisher and is_aggregator:
+        raw_title = getattr(raw, "title", "") or (raw.get("title", "") if hasattr(raw, "get") else "")
+        m = re.search(r"\s+-\s+([^-]+)$", str(raw_title))
+        if m:
+            cand = m.group(1).strip()
+            if cand and cand.lower() not in {"google news", "google"}:
+                publisher = cand
+
+    if not publisher:
+        publisher = feed.name
+
+    if publisher != feed.name:
+        authority = source_authority(publisher)
+    else:
+        authority = feed.authority_score
+
+    return publisher, discovered_via, authority
+
+
 def _entry_source(raw: object, feed: SourceFeed) -> str:
-    source = getattr(raw, "source", None)
-    if isinstance(source, dict) and source.get("title"):
-        return source["title"]
-    if hasattr(raw, "get"):
-        raw_source = raw.get("source", {})  # type: ignore[attr-defined]
-        if isinstance(raw_source, dict) and raw_source.get("title"):
-            return raw_source["title"]
-    return feed.name
+    publisher, _, _ = extract_source_and_publisher(raw, feed)
+    return publisher
 
 
 def _entry_date(raw: object) -> datetime | None:
