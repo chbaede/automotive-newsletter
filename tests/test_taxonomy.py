@@ -190,3 +190,4 @@ def test_entity_normalization_across_aliases():
     assert "Hyundai Mobis" in entities
     assert "Forvia" in entities
     assert "CES" in entities
+

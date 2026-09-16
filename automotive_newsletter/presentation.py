@@ -154,6 +154,10 @@ def display_summary_en(article: Article) -> str:
     return "Reference link for key trends in the automotive industry."
 
 
+def display_key_points(article: Article) -> list[str]:
+    return [pt.strip() for pt in article.key_points if pt.strip()]
+
+
 def display_url(article: Article) -> str | None:
     target = article.canonical_url or article.original_url or article.url
     if _is_intermediary_url(target):

@@ -63,7 +63,8 @@ class NewsletterStore:
                         primary_category, secondary_categories, topics, entities,
                         source_score, relevance_score, impact_score, novelty_score, recency_score,
                         priority_score, event_id, related_article_ids,
-                        is_official, is_reference, is_primary_source, collected_at
+                        is_official, is_reference, is_primary_source, collected_at,
+                        content, key_points, summary_model, summary_version, summary_created_at
                     )
                     values (
                         ?, ?, ?, ?, ?, ?, ?,
@@ -73,7 +74,8 @@ class NewsletterStore:
                         ?, ?, ?, ?,
                         ?, ?, ?, ?, ?,
                         ?, ?, ?,
-                        ?, ?, ?, ?
+                        ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?
                     )
                     """,
                     (
@@ -114,6 +116,11 @@ class NewsletterStore:
                         1 if article.is_reference else 0,
                         1 if article.is_primary_source else 0,
                         article.collected_at.isoformat() if article.collected_at else None,
+                        article.content,
+                        json.dumps(article.key_points, ensure_ascii=False),
+                        article.summary_model,
+                        article.summary_version,
+                        article.summary_created_at.isoformat() if article.summary_created_at else None,
                     ),
                 )
         issue = self.get_issue(issue_date)
@@ -284,7 +291,12 @@ class NewsletterStore:
                     is_official integer not null default 0,
                     is_reference integer not null default 0,
                     is_primary_source integer not null default 0,
-                    collected_at text
+                    collected_at text,
+                    content text not null default '',
+                    key_points text not null default '[]',
+                    summary_model text,
+                    summary_version text,
+                    summary_created_at text
                 )
                 """
             )
@@ -321,6 +333,11 @@ class NewsletterStore:
                 ("is_reference", "integer default 0"),
                 ("is_primary_source", "integer default 0"),
                 ("collected_at", "text"),
+                ("content", "text default ''"),
+                ("key_points", "text default '[]'"),
+                ("summary_model", "text"),
+                ("summary_version", "text"),
+                ("summary_created_at", "text"),
             ]
             for col_name, col_def in new_columns:
                 if col_name not in existing_columns:
@@ -399,6 +416,11 @@ class NewsletterStore:
         is_primary_source = bool(get_val("is_primary_source", 0))
 
         collected_at = _parse_datetime(get_val("collected_at"))
+        content = str(get_val("content", ""))
+        key_points = get_json_list("key_points")
+        summary_model = get_val("summary_model")
+        summary_version = get_val("summary_version")
+        summary_created_at = _parse_datetime(get_val("summary_created_at"))
 
         return Article(
             title=title,
@@ -437,6 +459,11 @@ class NewsletterStore:
             is_reference=is_reference,
             is_primary_source=is_primary_source,
             collected_at=collected_at,
+            content=content,
+            key_points=key_points,
+            summary_model=str(summary_model) if summary_model is not None else None,
+            summary_version=str(summary_version) if summary_version is not None else None,
+            summary_created_at=summary_created_at,
         )
 
 

@@ -15,6 +15,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .config import Settings, load_settings
+from .content_extractor import extract_usable_article_text
 from .models import Article, FeedEntry, NewsletterIssue
 from .sources import (
     DEFAULT_FEEDS,
@@ -27,7 +28,7 @@ from .sources import (
     source_metadata,
 )
 from .store import NewsletterStore
-from .summarizer import classify_article
+from .summarizer import BaseSummarizer, classify_article, get_summarizer
 
 TRACKING_PARAMS = {
     "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
@@ -95,6 +96,7 @@ def are_titles_similar(t1: str, t2: str) -> bool:
 def collect_from_entries(
     entries: Iterable[FeedEntry],
     recent_articles: Iterable[Article] | None = None,
+    summarizer: BaseSummarizer | None = None,
 ) -> tuple[list[Article], list[str]]:
     articles: list[Article] = []
     seen_urls: set[str] = set()
@@ -160,8 +162,17 @@ def collect_from_entries(
                 entry.source_type in {"official", "regulator", "press_release"}
             ),
             collected_at=entry.collected_at or datetime.now(timezone.utc),
+            content=entry.content,
         )
-        articles.append(classify_article(article))
+        is_short = len((entry.content or entry.excerpt).strip()) < 250
+        articles.append(
+            classify_article(
+                article,
+                summarizer=summarizer,
+                content=entry.content,
+                is_short_excerpt=is_short,
+            )
+        )
 
     articles.sort(
         key=lambda article: (
@@ -177,16 +188,21 @@ def build_issue_articles(
     entries: Iterable[FeedEntry] | Iterable[Article],
     per_section: int = 5,
     recent_articles: Iterable[Article] | None = None,
+    summarizer: BaseSummarizer | None = None,
 ) -> list[Article]:
     entry_list = list(entries)
     if not entry_list:
         return []
     if isinstance(entry_list[0], FeedEntry):
         articles, _warnings = collect_from_entries(
-            entry_list, recent_articles=recent_articles  # type: ignore[arg-type]
+            entry_list,  # type: ignore[arg-type]
+            recent_articles=recent_articles,
+            summarizer=summarizer,
         )
     else:
-        articles = [classify_article(article) for article in entry_list]  # type: ignore[arg-type]
+        articles = [
+            classify_article(article, summarizer=summarizer) for article in entry_list  # type: ignore[arg-type]
+        ]
 
     selected: list[Article] = []
     for section in SECTION_ORDER:
@@ -207,14 +223,18 @@ def collect_and_store(
     settings: Settings | None = None,
     issue_date: str | None = None,
     feeds: list[SourceFeed] | None = None,
+    summarizer: BaseSummarizer | None = None,
 ) -> NewsletterIssue:
     settings = settings or load_settings()
     store = store or NewsletterStore(settings.db_path)
+    summarizer = summarizer or get_summarizer(settings)
     issue_date = issue_date or date.today().isoformat()
     recent_articles = store.get_recent_articles(before_issue_date=issue_date, days=7)
     feeds_to_fetch = feeds if feeds is not None else get_enabled_sources()
     entries, warnings = fetch_feed_entries(feeds_to_fetch, settings=settings)
-    articles = build_issue_articles(entries, recent_articles=recent_articles)
+    articles = build_issue_articles(
+        entries, recent_articles=recent_articles, summarizer=summarizer
+    )
     articles = ensure_required_fallbacks(articles, issue_date=issue_date)
     if not articles and warnings:
         warnings = [*warnings, "수집된 기사가 없어 빈 이슈를 저장했습니다."]
@@ -658,10 +678,19 @@ def fetch_feed_entries(
                     if settings.resolve_news_links
                     else url
                 )
-                if settings.fetch_article_excerpts and not excerpt:
-                    excerpt = fetch_article_excerpt(
-                        resolved_url, timeout=settings.request_timeout_seconds
-                    )
+
+                extracted = extract_usable_article_text(
+                    raw_entry=raw,
+                    url=resolved_url,
+                    title=title,
+                    excerpt=excerpt,
+                    allow_page_fetch=settings.fetch_article_excerpts,
+                    timeout=settings.content_fetch_timeout,
+                )
+                usable_content = extracted.text
+                if not excerpt and usable_content:
+                    excerpt = clean_text(usable_content, 420)
+
                 entries.append(
                     FeedEntry(
                         title=title,
@@ -676,6 +705,7 @@ def fetch_feed_entries(
                         authority_score=authority,
                         source_type=source_type,
                         source_authority=authority,
+                        content=usable_content,
                     )
                 )
                 time.sleep(0.02)

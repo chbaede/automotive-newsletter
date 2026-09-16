@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import json
+import logging
 import re
-from dataclasses import replace
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
+
+import httpx
 
 from .models import Article
-from .taxonomy import classify_taxonomy
+from .prompts import SUMMARIZATION_SYSTEM_PROMPT, build_user_prompt
+from .taxonomy import CATEGORY_LABELS_EN, classify_taxonomy
+
+logger = logging.getLogger(__name__)
 
 
 OEM_NAMES = [
@@ -110,7 +119,171 @@ CATEGORY_LABELS = {
 }
 
 
-def classify_article(article: Article) -> Article:
+@dataclass(slots=True)
+class SummaryResult:
+    summary_ko: str
+    summary_en: str
+    why_it_matters_ko: str
+    key_points: list[str] = field(default_factory=list)
+    summary_model: str = "template"
+    summary_version: str = "v1"
+    summary_created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class BaseSummarizer(ABC):
+    @abstractmethod
+    def summarize(
+        self, article: Article, content: str = "", is_short_excerpt: bool = False
+    ) -> SummaryResult:
+        """Produce factual summary result for article."""
+        pass
+
+
+class TemplateSummarizer(BaseSummarizer):
+    def summarize(
+        self, article: Article, content: str = "", is_short_excerpt: bool = False
+    ) -> SummaryResult:
+        summary_ko = summarize_article(article)
+        en_label = CATEGORY_LABELS_EN.get(article.category, "Automotive Industry")
+        en_signal = _business_signal_en(article)
+        if article.excerpt:
+            summary_en = article.excerpt.strip()
+        else:
+            summary_en = f"{article.title}. Key signal highlights {en_signal} in the {en_label} domain."
+
+        why_it_matters_ko = _impact_sentence(article.category)
+
+        entities = article.entities or [
+            tag for tag in article.tags if tag not in {"SDV", "ADAS", "OTA", "EV"}
+        ]
+        topics = article.topics or [
+            tag for tag in article.tags if tag in {"SDV", "ADAS", "OTA", "EV"}
+        ]
+
+        key_points: list[str] = []
+        if entities:
+            key_points.append(f"주요 기업 및 기관: {', '.join(entities[:4])}")
+        elif article.source:
+            key_points.append(f"출처: {article.source}")
+        if topics:
+            key_points.append(f"핵심 기술·주제: {', '.join(topics[:4])}")
+        sig = _business_signal(article)
+        key_points.append(f"산업 신호: {sig}")
+
+        return SummaryResult(
+            summary_ko=summary_ko,
+            summary_en=summary_en,
+            why_it_matters_ko=why_it_matters_ko,
+            key_points=key_points,
+            summary_model="template",
+            summary_version="v1",
+        )
+
+
+class OllamaSummarizer(BaseSummarizer):
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        model: str = "llama3.2",
+        timeout: float = 30.0,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.timeout = timeout
+
+    def summarize(
+        self, article: Article, content: str = "", is_short_excerpt: bool = False
+    ) -> SummaryResult:
+        text_body = content or article.content or article.excerpt
+        user_prompt = build_user_prompt(
+            title=article.title,
+            source=article.publisher or article.source,
+            content=text_body,
+            excerpt=article.excerpt,
+            is_short_excerpt=is_short_excerpt,
+        )
+
+        endpoint = f"{self.base_url}/api/generate"
+        payload = {
+            "model": self.model,
+            "prompt": user_prompt,
+            "system": SUMMARIZATION_SYSTEM_PROMPT,
+            "format": "json",
+            "stream": False,
+            "options": {
+                "temperature": 0.1,
+            },
+        }
+
+        with httpx.Client(timeout=self.timeout) as client:
+            resp = client.post(endpoint, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+
+        raw_response = data.get("response", "")
+        parsed = json.loads(raw_response)
+
+        summary_ko = str(parsed.get("summary_ko", "")).strip()
+        summary_en = str(parsed.get("summary_en", "")).strip()
+        why_it_matters_ko = str(parsed.get("why_it_matters_ko", "")).strip()
+        raw_points = parsed.get("key_points", [])
+        key_points = [str(pt).strip() for pt in raw_points if str(pt).strip()]
+
+        if not summary_ko or not summary_en:
+            raise ValueError("Ollama response missing required summary fields")
+
+        return SummaryResult(
+            summary_ko=summary_ko,
+            summary_en=summary_en,
+            why_it_matters_ko=why_it_matters_ko,
+            key_points=key_points,
+            summary_model=f"ollama:{self.model}",
+            summary_version="v1",
+        )
+
+
+class FallbackSummarizer(BaseSummarizer):
+    def __init__(self, primary: BaseSummarizer, fallback: BaseSummarizer):
+        self.primary = primary
+        self.fallback = fallback
+
+    def summarize(
+        self, article: Article, content: str = "", is_short_excerpt: bool = False
+    ) -> SummaryResult:
+        try:
+            return self.primary.summarize(
+                article, content=content, is_short_excerpt=is_short_excerpt
+            )
+        except Exception as exc:
+            logger.warning("Primary summarizer failed, falling back: %s", exc)
+            return self.fallback.summarize(
+                article, content=content, is_short_excerpt=is_short_excerpt
+            )
+
+
+def get_summarizer(settings: object = None) -> BaseSummarizer:
+    if settings is None:
+        from .config import load_settings
+        settings = load_settings()
+
+    template = TemplateSummarizer()
+    if getattr(settings, "enable_ai_summary", False):
+        ollama = OllamaSummarizer(
+            base_url=getattr(settings, "ollama_base_url", "http://localhost:11434"),
+            model=getattr(settings, "ollama_model", "llama3.2"),
+            timeout=getattr(settings, "ollama_timeout", 30.0),
+        )
+        return FallbackSummarizer(primary=ollama, fallback=template)
+
+    return template
+
+
+def classify_article(
+    article: Article,
+    summarizer: BaseSummarizer | None = None,
+    content: str = "",
+    is_short_excerpt: bool = False,
+) -> Article:
     tax = classify_taxonomy(
         title=article.title,
         excerpt=article.excerpt,
@@ -129,11 +302,8 @@ def classify_article(article: Article) -> Article:
 
     text = f"{article.title} {article.excerpt} {article.source}".lower()
     score = _score_article(article, category, tags, text)
-    summary = article.summary_ko or summarize_article(
-        replace(article, category=category, primary_category=primary_category, tags=tags, score=score)
-    )
 
-    return replace(
+    classified_article = replace(
         article,
         category=category,
         primary_category=primary_category,
@@ -144,7 +314,33 @@ def classify_article(article: Article) -> Article:
         score=score,
         priority_score=score,
         source_score=float(article.source_authority),
-        summary_ko=summary,
+        content=content or article.content,
+    )
+
+    summarizer_inst = summarizer or TemplateSummarizer()
+    summary_res = summarizer_inst.summarize(
+        classified_article,
+        content=content or article.content,
+        is_short_excerpt=is_short_excerpt,
+    )
+
+    summary_ko = article.summary_ko or summary_res.summary_ko
+    summary_en = article.summary_en or summary_res.summary_en
+    why_it_matters_ko = article.why_it_matters_ko or summary_res.why_it_matters_ko
+    key_points = article.key_points if article.key_points else summary_res.key_points
+    summary_model = article.summary_model or summary_res.summary_model
+    summary_version = article.summary_version or summary_res.summary_version
+    summary_created_at = article.summary_created_at or summary_res.summary_created_at
+
+    return replace(
+        classified_article,
+        summary_ko=summary_ko,
+        summary_en=summary_en,
+        why_it_matters_ko=why_it_matters_ko,
+        key_points=key_points,
+        summary_model=summary_model,
+        summary_version=summary_version,
+        summary_created_at=summary_created_at,
     )
 
 
@@ -250,3 +446,18 @@ def _contains_name(text: str, name: str) -> bool:
     if len(name) <= 3 or name.isupper():
         return re.search(rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])", text, re.IGNORECASE) is not None
     return name.lower() in text.lower()
+
+
+def _business_signal_en(article: Article) -> str:
+    text = f"{article.title} {article.excerpt}".lower()
+    if any(word in text for word in ["investment", "invest", "funding", "billion"]):
+        return "investment and capital expansion"
+    if any(word in text for word in ["partnership", "collaboration", "joint", "alliance"]):
+        return "strategic partnership and ecosystem realignment"
+    if any(word in text for word in ["recall", "probe", "investigation", "regulator"]):
+        return "quality and regulatory risk"
+    if any(word in text for word in ["software", "sdv", "ota", "zonal"]):
+        return "software-defined vehicle competitiveness"
+    if any(word in text for word in ["battery", "ev", "electric"]):
+        return "electrification supply chain shift"
+    return "product and strategy evolution"

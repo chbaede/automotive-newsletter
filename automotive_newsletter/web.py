@@ -17,6 +17,7 @@ from .mailer import MailConfigError, send_issue
 from .models import NewsletterIssue
 from .presentation import (
     REGION_FILTERS,
+    display_key_points,
     display_summary_ko,
     display_summary_en,
     display_title_ko,
@@ -166,6 +167,7 @@ def _render_index(
             "history": store.list_issues(),
             "today": date.today().isoformat(),
             "assess_priority": assess_priority,
+            "display_key_points": display_key_points,
             "display_summary_ko": display_summary_ko,
             "display_summary_en": display_summary_en,
             "display_title_ko": display_title_ko,

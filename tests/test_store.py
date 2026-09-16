@@ -66,3 +66,37 @@ def test_store_get_recent_articles(tmp_path):
     assert "Today News" not in recent_titles  # before_issue_date excluded
 
 
+def test_store_persists_and_reads_summary_metadata(tmp_path):
+    store = NewsletterStore(tmp_path / "newsletter.db")
+    created_ts = datetime(2026, 6, 8, 12, 34, 56, tzinfo=timezone.utc)
+    article = Article(
+        title="NVIDIA and MediaTek partner on automotive cockpit SoC",
+        url="https://example.com/nvidia-mediatek",
+        source="Tech Automotive",
+        category="sdv",
+        summary_ko="엔비디아와 미디어텍이 차량용 콕핏 SoC 개발에 협력합니다.",
+        summary_en="NVIDIA and MediaTek announced a partnership on automotive cockpit SoCs.",
+        why_it_matters_ko="차세대 스마트 콕핏 시장에서의 칩셋 경쟁 구도 변화를 예고합니다.",
+        key_points=["NVIDIA-MediaTek 협력 체결", "차세대 콕핏 SoC 개발 목표"],
+        summary_model="ollama:llama3.2",
+        summary_version="v1",
+        summary_created_at=created_ts,
+        content="Full article content text goes here.",
+    )
+
+    store.save_issue("2026-06-08", [article])
+    retrieved = store.get_issue("2026-06-08")
+
+    assert retrieved is not None
+    assert len(retrieved.articles) == 1
+    art = retrieved.articles[0]
+    assert art.summary_ko == "엔비디아와 미디어텍이 차량용 콕핏 SoC 개발에 협력합니다."
+    assert art.summary_en == "NVIDIA and MediaTek announced a partnership on automotive cockpit SoCs."
+    assert art.why_it_matters_ko == "차세대 스마트 콕핏 시장에서의 칩셋 경쟁 구도 변화를 예고합니다."
+    assert art.key_points == ["NVIDIA-MediaTek 협력 체결", "차세대 콕핏 SoC 개발 목표"]
+    assert art.summary_model == "ollama:llama3.2"
+    assert art.summary_version == "v1"
+    assert art.summary_created_at == created_ts
+    assert art.content == "Full article content text goes here."
+
+

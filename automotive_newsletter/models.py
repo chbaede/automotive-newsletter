@@ -21,6 +21,7 @@ class FeedEntry:
     source_authority: int | None = None
     canonical_url: str | None = None
     collected_at: datetime | None = None
+    content: str = ""
 
     def __post_init__(self) -> None:
         if self.source_authority is None:
@@ -63,9 +64,14 @@ class Article:
     canonical_url: str | None = None
     original_url: str | None = None
 
-    # Content
+    # Content & Summarization
     summary_en: str = ""
     why_it_matters_ko: str = ""
+    content: str = ""
+    key_points: list[str] = field(default_factory=list)
+    summary_model: str | None = None
+    summary_version: str | None = None
+    summary_created_at: datetime | None = None
 
     # Classification
     primary_category: str | None = None

@@ -32,6 +32,11 @@ class Settings:
     fetch_article_excerpts: bool = False
     verify_tls: bool = True
     admin_key: str | None = None
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"
+    ollama_timeout: float = 30.0
+    enable_ai_summary: bool = False
+    content_fetch_timeout: float = 6.0
 
     @property
     def recipients(self) -> list[str]:
@@ -67,6 +72,11 @@ def load_settings() -> Settings:
         fetch_article_excerpts=_bool_env("FETCH_ARTICLE_EXCERPTS", False),
         verify_tls=_bool_env("VERIFY_TLS", True),
         admin_key=os.getenv("ADMIN_KEY") or os.getenv("ADMIN_PASSWORD"),
+        ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+        ollama_model=os.getenv("OLLAMA_MODEL", "llama3.2"),
+        ollama_timeout=float(os.getenv("OLLAMA_TIMEOUT", "30.0")),
+        enable_ai_summary=_bool_env("ENABLE_AI_SUMMARY", False),
+        content_fetch_timeout=float(os.getenv("CONTENT_FETCH_TIMEOUT", "6.0")),
     )
 
 
