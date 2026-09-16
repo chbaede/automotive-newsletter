@@ -126,6 +126,37 @@ class NewsletterStore:
             ).fetchall()
         return [(row["issue_date"], row["article_count"]) for row in rows]
 
+    def get_recent_articles(
+        self, before_issue_date: str | None = None, days: int = 7
+    ) -> list[Article]:
+        with self._connect() as conn:
+            if before_issue_date:
+                rows = conn.execute(
+                    """
+                    select articles.*
+                    from articles
+                    join issues on articles.issue_id = issues.id
+                    where issues.issue_date < ?
+                      and date(issues.issue_date) >= date(?, '-' || ? || ' day')
+                      and articles.category != 'conference'
+                    order by issues.issue_date desc, articles.position asc
+                    """,
+                    (before_issue_date, before_issue_date, days),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    select articles.*
+                    from articles
+                    join issues on articles.issue_id = issues.id
+                    where date(issues.issue_date) >= date('now', '-' || ? || ' day')
+                      and articles.category != 'conference'
+                    order by issues.issue_date desc, articles.position asc
+                    """,
+                    (days,),
+                ).fetchall()
+        return [self._row_to_article(row) for row in rows]
+
     def mark_sent(self, issue_date: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:

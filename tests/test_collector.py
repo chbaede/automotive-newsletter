@@ -165,6 +165,85 @@ def test_default_feeds_include_verified_industry_sources():
     assert "PR Newswire Automotive" in names
     assert "Car and Driver News" in names
     assert "Motor1 News" in names
+    assert "Automotive News" in names
+    assert "Automotive News Europe" in names
+    assert "JustAuto" in names
+    assert "Automotive Dive" in names
+    assert "The Drive" in names
+    assert "Korea Auto News" in names
+    assert "TechCrunch Transportation" in names
+
+
+def test_collect_from_entries_filters_articles_from_recent_issues():
+    recent = [
+        Article(
+            title="Hyundai Motor expands global EV production hub",
+            url="https://example.com/hyundai-ev-hub",
+            source="Autonews",
+            category="oem",
+        )
+    ]
+    new_entries = [
+        FeedEntry(
+            title="Hyundai Motor expands global EV production hub",
+            url="https://example.com/hyundai-ev-hub",
+            source="Another Wire",
+            bucket="oem",
+        ),
+        FeedEntry(
+            title="Completely fresh automotive industry development",
+            url="https://example.com/fresh-news",
+            source="NewsWire",
+            bucket="big",
+        ),
+    ]
+
+    articles, _ = collect_from_entries(new_entries, recent_articles=recent)
+    assert len(articles) == 1
+    assert articles[0].title == "Completely fresh automotive industry development"
+
+
+def test_collect_from_entries_filters_near_duplicate_titles_across_sources():
+    entries = [
+        FeedEntry(
+            title="Tesla cuts Model Y prices in US - InsideEVs",
+            url="https://insideevs.com/tesla-modely",
+            source="InsideEVs",
+            bucket="oem",
+        ),
+        FeedEntry(
+            title="Tesla cuts Model Y price in US - Reuters",
+            url="https://reuters.com/tesla-cuts",
+            source="Reuters",
+            bucket="big",
+        ),
+        FeedEntry(
+            title="[단독] 현대차 인도법인 상장 추진",
+            url="https://news1.kr/hyundai-india",
+            source="News1",
+            bucket="oem",
+        ),
+        FeedEntry(
+            title="현대차 인도법인 상장 추진 - 연합뉴스",
+            url="https://yna.co.kr/hyundai-india-ipo",
+            source="Yonhap",
+            bucket="big",
+        ),
+        FeedEntry(
+            title="Autonomous vehicle testing expands in California",
+            url="https://example.com/av-california",
+            source="Tech Wire",
+            bucket="sdv",
+        ),
+    ]
+
+    articles, _ = collect_from_entries(entries)
+    titles = [a.title for a in articles]
+
+    assert len(articles) == 3
+    assert any("Tesla cuts Model Y" in t for t in titles)
+    assert any("현대차 인도법인 상장 추진" in t for t in titles)
+    assert any("Autonomous vehicle testing expands in California" in t for t in titles)
 
 
 def test_check_feed_health_reports_parse_failures(monkeypatch):

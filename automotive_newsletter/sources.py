@@ -28,31 +28,26 @@ def google_news_rss(query: str) -> str:
     return f"https://news.google.com/rss/search?q={encoded}&hl=en-US&gl=US&ceid=US:en"
 
 
+def google_news_kr_rss(query: str) -> str:
+    encoded = quote_plus(query)
+    return f"https://news.google.com/rss/search?q={encoded}&hl=ko&gl=KR&ceid=KR:ko"
+
+
 DEFAULT_FEEDS = [
+    SourceFeed(
+        "Automotive News",
+        "big",
+        "https://www.autonews.com/arc/outboundfeeds/rss/?outputType=xml",
+    ),
+    SourceFeed(
+        "Automotive News Europe",
+        "oem",
+        "https://europe.autonews.com/arc/outboundfeeds/rss/?outputType=xml",
+    ),
     SourceFeed(
         "Automotive World",
         "big",
         "https://www.automotiveworld.com/feed/",
-    ),
-    SourceFeed(
-        "Electrek",
-        "sdv",
-        "https://electrek.co/feed/",
-    ),
-    SourceFeed(
-        "InsideEVs",
-        "oem",
-        "https://insideevs.com/rss/news/all/",
-    ),
-    SourceFeed(
-        "The Verge Transportation",
-        "sdv",
-        "https://www.theverge.com/rss/transportation/index.xml",
-    ),
-    SourceFeed(
-        "Automotive Testing Technology International",
-        "sdv",
-        "https://www.automotivetestingtechnologyinternational.com/feed",
     ),
     SourceFeed(
         "WardsAuto",
@@ -65,6 +60,25 @@ DEFAULT_FEEDS = [
         "https://www.prnewswire.com/rss/automotive-transportation/automotive-list.rss",
     ),
     SourceFeed(
+        "Global automotive big news",
+        "big",
+        google_news_rss(
+            'automotive industry OR automaker OR "electric vehicle" OR SDV Reuters OR Bloomberg'
+        ),
+    ),
+    SourceFeed(
+        "Korea Auto News",
+        "big",
+        google_news_kr_rss(
+            "현대차 OR 기아 OR 한국GM OR 르노코리아 OR 자동차 배터리 OR 자율주행 OR SDV"
+        ),
+    ),
+    SourceFeed(
+        "InsideEVs",
+        "oem",
+        "https://insideevs.com/rss/news/all/",
+    ),
+    SourceFeed(
         "Car and Driver News",
         "oem",
         "https://www.caranddriver.com/rss/news.xml",
@@ -75,45 +89,73 @@ DEFAULT_FEEDS = [
         "https://www.motor1.com/rss/news/all/",
     ),
     SourceFeed(
-        "Global automotive big news",
-        "big",
-        google_news_rss(
-            "automotive industry OEM supplier Reuters Automotive News WardsAuto when:7d"
-        ),
+        "The Drive",
+        "oem",
+        "https://www.thedrive.com/feed",
     ),
     SourceFeed(
         "OEM strategy",
         "oem",
         google_news_rss(
-            "Toyota Volkswagen Hyundai GM Ford Stellantis BMW Mercedes Tesla BYD vehicle strategy when:7d"
+            "Toyota OR Volkswagen OR Hyundai OR Kia OR GM OR Ford OR Stellantis OR BMW OR Mercedes OR Tesla OR BYD strategy OR EV"
         ),
+    ),
+    SourceFeed(
+        "JustAuto",
+        "tier1",
+        "https://www.just-auto.com/feed/",
+    ),
+    SourceFeed(
+        "Automotive Dive",
+        "tier1",
+        "https://www.automotivedive.com/feeds/news/",
     ),
     SourceFeed(
         "Tier 1 suppliers",
         "tier1",
         google_news_rss(
-            "Bosch Continental Denso Magna ZF Aptiv Valeo Forvia Hyundai Mobis CATL automotive supplier when:14d"
+            'Bosch OR Continental OR Denso OR Magna OR ZF OR "Hyundai Mobis" OR Aptiv automotive'
+        ),
+    ),
+    SourceFeed(
+        "Electrek",
+        "sdv",
+        "https://electrek.co/feed/",
+    ),
+    SourceFeed(
+        "TechCrunch Transportation",
+        "sdv",
+        "https://techcrunch.com/category/transportation/feed/",
+    ),
+    SourceFeed(
+        "The Verge Transportation",
+        "sdv",
+        "https://www.theverge.com/rss/transportation/index.xml",
+    ),
+    SourceFeed(
+        "Automotive Testing Technology International",
+        "sdv",
+        "https://www.automotivetestingtechnologyinternational.com/feed",
+    ),
+    SourceFeed(
+        "SDV software",
+        "sdv",
+        google_news_rss(
+            '"software-defined vehicle" OR SDV OR "autonomous driving" OR "zonal architecture" OR AUTOSAR'
         ),
     ),
     SourceFeed(
         "Regulators and safety",
         "institution",
         google_news_rss(
-            "site:nhtsa.gov OR site:transport.ec.europa.eu OR site:acea.auto automotive vehicle safety regulation when:14d"
-        ),
-    ),
-    SourceFeed(
-        "SDV software",
-        "sdv",
-        google_news_rss(
-            '"software-defined vehicle" OR SDV OR "zonal architecture" OR automotive OTA OR AUTOSAR when:7d'
+            'NHTSA OR "Euro NCAP" OR "European Commission" OR ACEA vehicle OR automotive safety OR emissions OR tariff'
         ),
     ),
     SourceFeed(
         "Institutions and magazines",
         "institution",
         google_news_rss(
-            '"S&P Global Mobility" OR McKinsey automotive OR Gartner automotive OR SAE automotive OR WardsAuto when:7d'
+            '"S&P Global Mobility" OR McKinsey OR Gartner OR "SAE International" automotive'
         ),
     ),
     SourceFeed(

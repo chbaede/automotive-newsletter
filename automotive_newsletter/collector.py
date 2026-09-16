@@ -22,11 +22,83 @@ from .summarizer import classify_article
 TRACKING_PARAMS = {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id"}
 REQUEST_HEADERS = {"User-Agent": "AutomotiveNewsletter/0.1 (+local research app)"}
 
+TITLE_STOP_WORDS = {
+    "the", "and", "for", "with", "from", "that", "this", "about", "after",
+    "over", "into", "will", "are", "were", "was", "has", "have", "had",
+    "its", "new", "says", "said", "속보", "단독", "종합", "포토", "영상",
+    "in", "on", "at", "by", "an", "a", "to", "of", "is", "it", "as", "be",
+}
 
-def collect_from_entries(entries: Iterable[FeedEntry]) -> tuple[list[Article], list[str]]:
+
+def clean_title_for_comparison(title: str) -> str:
+    title = re.sub(r"^\[.*?\]|\【.*?\】|\(.*?\)", " ", title)
+    title = re.sub(r"\s*[-|–—]\s*[^-|–—]+$", "", title)
+    title = re.sub(r"[^a-z0-9가-힣\s]", " ", title.lower())
+    return " ".join(title.split())
+
+
+def extract_title_tokens(title: str) -> set[str]:
+    cleaned = clean_title_for_comparison(title)
+    words = cleaned.split()
+    return {w for w in words if w not in TITLE_STOP_WORDS}
+
+
+def _title_numbers(title: str) -> set[str]:
+    return set(re.findall(r"\b\d+[a-z]?\b", title.lower()))
+
+
+def are_titles_similar(t1: str, t2: str) -> bool:
+    norm1 = normalize_title(t1)
+    norm2 = normalize_title(t2)
+    if norm1 == norm2 and norm1:
+        return True
+
+    # If numeric identifiers differ (e.g. Model 3 vs Model Y, part 0 vs 1), do not treat as similar
+    if _title_numbers(t1) != _title_numbers(t2):
+        return False
+
+    tokens1 = extract_title_tokens(t1)
+    tokens2 = extract_title_tokens(t2)
+    if not tokens1 or not tokens2:
+        return False
+
+    common = tokens1 & tokens2
+    max_len = max(len(tokens1), len(tokens2))
+    min_len = min(len(tokens1), len(tokens2))
+
+    if len(common) >= 4 and (len(common) / max_len >= 0.8 or len(common) / min_len >= 0.85):
+        return True
+
+    if len(common) >= 3 and min_len >= 4:
+        jaccard = len(common) / len(tokens1 | tokens2)
+        if jaccard >= 0.75:
+            return True
+
+    return False
+
+
+def collect_from_entries(
+    entries: Iterable[FeedEntry],
+    recent_articles: Iterable[Article] | None = None,
+) -> tuple[list[Article], list[str]]:
     articles: list[Article] = []
     seen_urls: set[str] = set()
     seen_titles: set[str] = set()
+    title_index: dict[str, list[str]] = {}
+
+    if recent_articles:
+        for past_article in recent_articles:
+            if past_article.category == "conference":
+                continue
+            past_url = canonicalize_url(past_article.url)
+            past_norm = normalize_title(past_article.title)
+            if past_url:
+                seen_urls.add(past_url)
+            if past_norm:
+                seen_titles.add(past_norm)
+            past_tokens = extract_title_tokens(past_article.title)
+            for tok in past_tokens:
+                title_index.setdefault(tok, []).append(past_article.title)
 
     for entry in entries:
         canonical_url = canonicalize_url(entry.url)
@@ -35,8 +107,21 @@ def collect_from_entries(entries: Iterable[FeedEntry]) -> tuple[list[Article], l
             continue
         if canonical_url in seen_urls or title_key in seen_titles:
             continue
+
+        tokens = extract_title_tokens(entry.title)
+        if tokens and entry.bucket != "conference":
+            candidate_titles = {
+                cand for tok in tokens for cand in title_index.get(tok, [])
+            }
+            if any(are_titles_similar(cand, entry.title) for cand in candidate_titles):
+                continue
+
         seen_urls.add(canonical_url)
         seen_titles.add(title_key)
+        if tokens and entry.bucket != "conference":
+            for tok in tokens:
+                title_index.setdefault(tok, []).append(entry.title)
+
         article = Article(
             title=clean_text(entry.title, 240),
             url=canonical_url,
@@ -57,12 +142,18 @@ def collect_from_entries(entries: Iterable[FeedEntry]) -> tuple[list[Article], l
     return articles, []
 
 
-def build_issue_articles(entries: Iterable[FeedEntry] | Iterable[Article], per_section: int = 5) -> list[Article]:
+def build_issue_articles(
+    entries: Iterable[FeedEntry] | Iterable[Article],
+    per_section: int = 5,
+    recent_articles: Iterable[Article] | None = None,
+) -> list[Article]:
     entry_list = list(entries)
     if not entry_list:
         return []
     if isinstance(entry_list[0], FeedEntry):
-        articles, _warnings = collect_from_entries(entry_list)  # type: ignore[arg-type]
+        articles, _warnings = collect_from_entries(
+            entry_list, recent_articles=recent_articles  # type: ignore[arg-type]
+        )
     else:
         articles = [classify_article(article) for article in entry_list]  # type: ignore[arg-type]
 
@@ -89,8 +180,9 @@ def collect_and_store(
     settings = settings or load_settings()
     store = store or NewsletterStore(settings.db_path)
     issue_date = issue_date or date.today().isoformat()
+    recent_articles = store.get_recent_articles(before_issue_date=issue_date, days=7)
     entries, warnings = fetch_feed_entries(feeds or DEFAULT_FEEDS, settings=settings)
-    articles = build_issue_articles(entries)
+    articles = build_issue_articles(entries, recent_articles=recent_articles)
     articles = ensure_required_fallbacks(articles, issue_date=issue_date)
     if not articles and warnings:
         warnings = [*warnings, "수집된 기사가 없어 빈 이슈를 저장했습니다."]
@@ -425,14 +517,33 @@ def remove_intermediary_articles(articles: list[Article]) -> list[Article]:
 
 def dedupe_articles(articles: list[Article]) -> list[Article]:
     deduped: list[Article] = []
-    seen: set[tuple[str, str]] = set()
+    seen_urls: set[str] = set()
+    seen_titles: set[str] = set()
+    title_index: dict[str, list[str]] = {}
+
     for article in articles:
-        key = (article.category, canonicalize_url(article.url) or normalize_title(article.title))
-        title_key = (article.category, normalize_title(article.title))
-        if key in seen or title_key in seen:
+        canon_url = canonicalize_url(article.url)
+        norm_title = normalize_title(article.title)
+        if canon_url and canon_url in seen_urls:
             continue
-        seen.add(key)
-        seen.add(title_key)
+        if norm_title and norm_title in seen_titles:
+            continue
+
+        tokens = extract_title_tokens(article.title)
+        if tokens and article.category != "conference":
+            candidate_titles = {
+                cand for tok in tokens for cand in title_index.get(tok, [])
+            }
+            if any(are_titles_similar(cand, article.title) for cand in candidate_titles):
+                continue
+
+        if canon_url:
+            seen_urls.add(canon_url)
+        if norm_title:
+            seen_titles.add(norm_title)
+        if tokens and article.category != "conference":
+            for tok in tokens:
+                title_index.setdefault(tok, []).append(article.title)
         deduped.append(article)
     return deduped
 
@@ -656,7 +767,8 @@ def is_intermediary_url(url: str) -> bool:
 
 
 def normalize_title(title: str) -> str:
-    title = re.sub(r"\s+-\s+[^-]+$", "", title)
+    title = re.sub(r"^\[.*?\]|\【.*?\】|\(.*?\)", " ", title)
+    title = re.sub(r"\s*[-|–—]\s*[^-|–—]+$", "", title)
     return re.sub(r"[^a-z0-9가-힣]+", "", title.lower())
 
 
