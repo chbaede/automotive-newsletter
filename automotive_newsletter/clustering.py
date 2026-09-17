@@ -438,15 +438,46 @@ def extract_event_themes(text: str) -> set[str]:
     return themes
 
 
+EVENT_SIMILARITY_THRESHOLD: float = 0.60
+EVENT_MEMBER_THRESHOLD: float = 0.65
+
+
 def stem_token(word: str) -> str:
     """Lightweight deterministic stemmer for English automotive terms."""
     w = word.lower().strip()
     if len(w) <= 3:
-        return w
-    for suffix in ("tions", "tion", "ments", "ment", "ing", "ed", "es", "s"):
+        return CANONICAL_ENTITY_MAP.get(w, w)
+    # Canonical automotive term equivalences
+    if w in {"software", "sw", "sdv", "sdvs"}:
+        return "sdv"
+    if w in {"partner", "partners", "partnership", "partnerships", "partnering"}:
+        return "partner"
+    if w in {"collaborate", "collaborates", "collaboration", "collaborating"}:
+        return "partner"
+    if w in {"invest", "invests", "investing", "investment", "investments"}:
+        return "invest"
+    if w in {"restructure", "restructures", "restructuring", "restructurings"}:
+        return "restructur"
+    if w in {"recall", "recalls", "recalling"}:
+        return "recall"
+    if w in {"platform", "platforms"}:
+        return "platform"
+    if w in {"architecture", "architectures"}:
+        return "architectur"
+    if w in {"electric", "electrification", "ev", "evs", "bev", "bevs"}:
+        return "electr"
+    if w in {"autonomous", "autonomy", "self-driving"}:
+        return "autonom"
+    if w in {"supplier", "suppliers", "supply", "supplies"}:
+        return "suppl"
+    if w in {"halt", "halts", "halting", "stop", "stops", "stopping"}:
+        return "halt"
+
+    for suffix in ("tions", "tion", "ments", "ment", "erships", "ership", "ships", "ship", "ing", "ed", "es", "s"):
         if w.endswith(suffix) and len(w) - len(suffix) >= 3:
-            return w[: -len(suffix)]
-    return w
+            w = w[: -len(suffix)]
+            break
+    return CANONICAL_ENTITY_MAP.get(w, w)
 
 
 def extract_stemmed_tokens(text: str) -> set[str]:
@@ -459,18 +490,29 @@ def extract_stemmed_tokens(text: str) -> set[str]:
     }
 
 
-def are_articles_same_event(
+def calculate_event_similarity(
     a1: Article, a2: Article, window_hours: float = 72.0
-) -> tuple[bool, float]:
-    """Determine whether two articles describe the same real-world event.
+) -> float:
+    """Calculate deterministic pairwise similarity between two articles (0.0 to 1.0).
 
-    Returns (is_same_event: bool, similarity: float).
+    Similarity Ranges:
+    * 0.90 ~ 1.00: Virtually identical event (same entity, same theme, high token overlap/syndication)
+    * 0.75 ~ 0.89: Very strong candidate (same entity, common theme, high containment)
+    * 0.60 ~ 0.74: Similar, needs caution (same entity, moderate overlap)
+    * < 0.60: Generally separate event
     """
+    if a1.article_id and a1.article_id == a2.article_id:
+        return 1.0
+    if a1.canonical_url and a1.canonical_url == a2.canonical_url:
+        return 1.0
+    if a1.url and a1.url == a2.url:
+        return 1.0
+
     # 1. Temporal window check
     if a1.published_at and a2.published_at:
         diff_hours = abs((a1.published_at - a2.published_at).total_seconds()) / 3600.0
         if diff_hours > window_hours:
-            return False, 0.0
+            return 0.0
 
     t1 = f"{a1.title} {a1.summary_ko} {' '.join(a1.tags)}"
     t2 = f"{a2.title} {a2.summary_ko} {' '.join(a2.tags)}"
@@ -480,19 +522,19 @@ def are_articles_same_event(
     m1 = extract_model_identifiers(t1)
     m2 = extract_model_identifiers(t2)
     if m1 and m2 and m1.isdisjoint(m2):
-        return False, 0.0
+        return 0.0
 
     # Guard B: Generation / standard collision (e.g. Euro 6 vs Euro 7, Gen 2 vs Gen 3)
     g1 = extract_generation_identifiers(t1)
     g2 = extract_generation_identifiers(t2)
     if g1 and g2 and g1.isdisjoint(g2):
-        return False, 0.0
+        return 0.0
 
     # Guard C: Recall defect collision (e.g. Airbag vs Brake recall)
     d1 = extract_recall_defects(t1)
     d2 = extract_recall_defects(t2)
     if d1 and d2 and d1.isdisjoint(d2):
-        return False, 0.0
+        return 0.0
 
     # Guard D: Brand / legal entity mismatch with parent group context
     c1 = extract_canonical_entities(a1)
@@ -500,77 +542,148 @@ def are_articles_same_event(
     p1 = extract_parent_groups(a1)
     p2 = extract_parent_groups(a2)
 
+    tokens1 = extract_stemmed_tokens(a1.title)
+    tokens2 = extract_stemmed_tokens(a2.title)
+    inter = tokens1 & tokens2
+    union = tokens1 | tokens2
+    jaccard = len(inter) / max(1, len(union))
+    containment = len(inter) / max(1, min(len(tokens1), len(tokens2)))
+    themes1 = extract_event_themes(t1)
+    themes2 = extract_event_themes(t2)
+    has_theme_overlap = bool(themes1 & themes2)
+
     if c1 and c2 and c1.isdisjoint(c2):
         # If they don't share a parent group, hard reject
         if not (p1 and p2 and (p1 & p2)):
-            return False, 0.0
+            return 0.0
 
-        # When sharing a parent group, parent_group is only a weak contextual signal.
+        # Parent group is only a weak contextual signal.
         # Distinct brands under the same group MUST remain separate events unless
         # there are additional strong signals proving they are the same real-world event.
-        tokens1 = extract_stemmed_tokens(a1.title)
-        tokens2 = extract_stemmed_tokens(a2.title)
-        inter = tokens1 & tokens2
-        union = tokens1 | tokens2
-        jaccard = len(inter) / max(1, len(union))
-        containment = len(inter) / max(1, min(len(tokens1), len(tokens2)))
-        themes1 = extract_event_themes(t1)
-        themes2 = extract_event_themes(t2)
-
         has_strong_joint_signal = (
-            bool(themes1 & themes2)
+            has_theme_overlap
             and len(inter) >= 3
             and (jaccard >= 0.50 or containment >= 0.70)
         )
         if not has_strong_joint_signal:
-            return False, 0.0
+            return 0.0
 
     # Guard E: Numeric identifiers discrepancy (e.g. update 0 vs update 1, 500,000 vs 100,000)
     nums1 = set(re.findall(r"\b\d+\b", a1.title))
     nums2 = set(re.findall(r"\b\d+\b", a2.title))
     if nums1 and nums2 and nums1.isdisjoint(nums2):
-        return False, 0.0
+        return 0.0
 
-    # 3. Action / Theme compatibility
-    themes1 = extract_event_themes(t1)
-    themes2 = extract_event_themes(t2)
-    has_theme_overlap = bool(themes1 & themes2)
-
+    # Guard F: Action / Theme incompatibility
     # If both have strong, disjoint event action themes (e.g. restructuring vs partnership)
     if themes1 and themes2 and themes1.isdisjoint(themes2):
-        return False, 0.0
-
-    # 4. Token Overlap (Stemmed Title Tokens)
-    tokens1 = extract_stemmed_tokens(a1.title)
-    tokens2 = extract_stemmed_tokens(a2.title)
-
-    inter = tokens1 & tokens2
-    union = tokens1 | tokens2
-
-    jaccard = len(inter) / max(1, len(union))
-    containment = len(inter) / max(1, min(len(tokens1), len(tokens2)))
+        return 0.0
 
     has_company_overlap = bool(c1 & c2)
 
-    # 5. Matching Decision Heuristic
-    # Case 1: Same company + Same action theme (e.g. VW restructuring)
+    # 3. Positive Similarity Calculation
+    lex = 0.55 * containment + 0.45 * jaccard
+
+    # Match boosts
+    num_bonus = 0.04 if (nums1 and nums2 and bool(nums1 & nums2)) else 0.0
+    model_bonus = 0.04 if (m1 and m2 and bool(m1 & m2)) else 0.0
+    topics1 = {t.lower() for t in a1.topics}
+    topics2 = {t.lower() for t in a2.topics}
+    topic_jaccard = len(topics1 & topics2) / max(1, len(topics1 | topics2)) if (topics1 and topics2) else 0.0
+    topic_bonus = 0.03 * topic_jaccard if topic_jaccard > 0 else 0.0
+
     if has_company_overlap and has_theme_overlap:
-        # At least 1 common content token or decent containment
         if len(inter) >= 1 or containment >= 0.25:
-            sim = 0.4 + 0.3 * containment + 0.3 * jaccard
-            return True, round(min(sim, 1.0), 3)
+            score = 0.68 + 0.26 * lex + num_bonus + model_bonus + topic_bonus
+            return round(min(0.99, max(0.60, score)), 3)
+    elif has_company_overlap:
+        if containment >= 0.40 or len(inter) >= 2:
+            score = 0.58 + 0.32 * lex + num_bonus + model_bonus + topic_bonus
+            return round(min(0.95, max(0.50, score)), 3)
+    elif p1 and p2 and (p1 & p2) and has_theme_overlap and (len(inter) >= 3 and (jaccard >= 0.50 or containment >= 0.70)):
+        score = 0.65 + 0.30 * lex + num_bonus
+        return round(min(0.98, max(0.65, score)), 3)
+    elif jaccard >= 0.45 or containment >= 0.65:
+        score = 0.60 + 0.38 * lex + num_bonus
+        return round(min(0.98, max(0.60, score)), 3)
 
-    # Case 2: High token overlap (Jaccard >= 0.45 or Containment >= 0.65)
-    if jaccard >= 0.45 or containment >= 0.65:
-        sim = 0.5 * jaccard + 0.5 * containment
-        return True, round(min(sim, 1.0), 3)
+    return round(min(0.55, 0.60 * lex), 3)
 
-    # Case 3: Same company + moderate token overlap
-    if has_company_overlap and (containment >= 0.40 or len(inter) >= 2):
-        sim = 0.3 + 0.4 * containment + 0.3 * jaccard
-        return True, round(min(sim, 1.0), 3)
 
-    return False, 0.0
+def are_articles_same_event(
+    a1: Article, a2: Article, window_hours: float = 72.0
+) -> tuple[bool, float]:
+    """Determine whether two articles describe the same real-world event.
+
+    Returns (is_same_event: bool, similarity: float).
+    """
+    sim = calculate_event_similarity(a1, a2, window_hours=window_hours)
+    is_same = sim >= EVENT_SIMILARITY_THRESHOLD
+    return is_same, sim
+
+
+def check_cluster_coherence(
+    cluster: list[Article],
+    primary: Article,
+    window_hours: float = 72.0,
+) -> tuple[float, list[Article], list[Article]]:
+    """Validate cluster coherence against primary and pairwise compatibility.
+
+    Rules:
+    * Rule 1: Every member must have similarity >= EVENT_MEMBER_THRESHOLD to primary.
+    * Rule 2: Incompatible articles are separated (no pairwise negative guard violations).
+    * Rule 3: Calculate cluster coherence score (average similarity to primary).
+
+    Returns:
+        (coherence_score, retained_articles, outlier_articles)
+    """
+    if len(cluster) <= 1:
+        return 1.0, list(cluster), []
+
+    retained: list[Article] = [primary]
+    outliers: list[Article] = []
+
+    # Rule 1: Validate each member against primary article
+    candidates = [a for a in cluster if a.article_id != primary.article_id]
+    scored_candidates: list[tuple[Article, float]] = []
+
+    for member in candidates:
+        sim = calculate_event_similarity(primary, member, window_hours=window_hours)
+        is_same, _ = are_articles_same_event(primary, member, window_hours=window_hours)
+        if is_same and sim >= EVENT_MEMBER_THRESHOLD:
+            scored_candidates.append((member, sim))
+        else:
+            outliers.append(member)
+
+    # Sort candidates by similarity to primary descending
+    scored_candidates.sort(key=lambda x: x[1], reverse=True)
+
+    # Rule 2: Pairwise compatibility check on retained members
+    for member, sim in scored_candidates:
+        incompatible = False
+        for existing in retained:
+            is_compat, _ = are_articles_same_event(existing, member, window_hours=window_hours)
+            if not is_compat:
+                incompatible = True
+                break
+        if not incompatible:
+            retained.append(member)
+        else:
+            outliers.append(member)
+
+    # Rule 3: Cluster coherence calculation
+    if len(retained) <= 1:
+        return 1.0, retained, outliers
+
+    member_sims = [
+        calculate_event_similarity(primary, m, window_hours=window_hours)
+        for m in retained
+        if m.article_id != primary.article_id
+    ]
+    avg_sim = sum(member_sims) / len(member_sims)
+    coherence_score = round(avg_sim, 3)
+
+    return coherence_score, retained, outliers
 
 
 def primary_source_rank(article: Article) -> tuple[int, float, float]:
@@ -778,43 +891,53 @@ def cluster_articles(
     if not articles:
         return [], [], []
 
-    # Disjoint set / union-find or adjacency-based clustering
-    n = len(articles)
-    adj: dict[int, set[int]] = {i: set() for i in range(n)}
-    similarity_map: dict[tuple[int, int], float] = {}
+    pending = list(articles)
+    final_clusters: list[list[Article]] = []
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            is_same, sim = are_articles_same_event(
-                articles[i], articles[j], window_hours=window_hours
-            )
-            if is_same:
-                adj[i].add(j)
-                adj[j].add(i)
-                similarity_map[(i, j)] = sim
-                similarity_map[(j, i)] = sim
+    # Iteratively form coherent clusters so outliers are re-evaluated and never transitively merged
+    while pending:
+        n = len(pending)
+        adj: dict[int, set[int]] = {i: set() for i in range(n)}
+        for i in range(n):
+            for j in range(i + 1, n):
+                is_same, _ = are_articles_same_event(
+                    pending[i], pending[j], window_hours=window_hours
+                )
+                if is_same:
+                    adj[i].add(j)
+                    adj[j].add(i)
 
-    visited = set()
-    clusters: list[list[Article]] = []
+        visited = set()
+        candidates: list[list[Article]] = []
+        for i in range(n):
+            if i not in visited:
+                component = []
+                queue = [i]
+                visited.add(i)
+                while queue:
+                    curr = queue.pop(0)
+                    component.append(pending[curr])
+                    for neighbor in adj[curr]:
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            queue.append(neighbor)
+                candidates.append(component)
 
-    for i in range(n):
-        if i not in visited:
-            component = []
-            queue = [i]
-            visited.add(i)
-            while queue:
-                curr = queue.pop(0)
-                component.append(articles[curr])
-                for neighbor in adj[curr]:
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        queue.append(neighbor)
-            clusters.append(component)
+        # Process the candidate component: validate against primary & pairwise compatibility
+        target_component = candidates[0]
+        primary = select_primary_article(target_component)
+        _, retained, _ = check_cluster_coherence(
+            target_component, primary, window_hours=window_hours
+        )
+
+        final_clusters.append(retained)
+        retained_ids = {a.article_id for a in retained}
+        pending = [a for a in pending if a.article_id not in retained_ids]
 
     events: list[Event] = []
     event_articles: list[EventArticle] = []
 
-    for cluster in clusters:
+    for cluster in final_clusters:
         primary = select_primary_article(cluster)
         now = datetime.now(timezone.utc)
         earliest_time = min(
@@ -866,7 +989,9 @@ def cluster_articles(
             rel = "primary" if article.article_id == primary.article_id else (
                 "official" if article.is_official else "coverage"
             )
-            sim = 1.0 if article.article_id == primary.article_id else 0.85
+            sim = 1.0 if article.article_id == primary.article_id else calculate_event_similarity(
+                primary, article, window_hours=window_hours
+            )
             event_articles.append(
                 EventArticle(
                     event_id=event_id,

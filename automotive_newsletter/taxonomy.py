@@ -188,20 +188,31 @@ TOPIC_PATTERNS: list[tuple[str, list[str], list[str]]] = [
     ("Android Automotive", ["android automotive", "aaos", "google built-in"], ["Vehicle OS", "SDV"]),
     ("QNX", ["qnx", "blackberry qnx"], ["Vehicle OS", "SDV"]),
     ("Yocto", ["yocto project", "yocto"], ["Embedded Linux", "Vehicle OS", "SDV"]),
-    ("Embedded Linux", ["embedded linux", "automotive linux", "agl"], ["Vehicle OS", "SDV"]),
-    ("Vehicle OS", ["vehicle os", "automotive os", "car os"], ["SDV"]),
-    ("SOA", ["service-oriented architecture", "service oriented architecture", "soa"], ["Middleware", "SDV"]),
-    ("Middleware", ["middleware", "someip", "dds"], ["SDV"]),
+    ("Embedded Linux", ["embedded linux", "automotive linux", "agl", "automotive grade linux"], ["Vehicle OS", "SDV"]),
+    ("Vehicle OS", ["vehicle os", "automotive os", "car os", "vehicle operating system"], ["SDV"]),
+    ("SOA", ["service-oriented architecture", "service oriented architecture", "soa", "some/ip", "someip", "dds", "doip", "automotive ethernet", "can fd"], ["Middleware", "SDV"]),
+    ("Middleware", ["middleware", "someip", "some/ip", "dds", "doip"], ["SDV"]),
     ("OTA", ["over-the-air", "ota update", "ota", "무선 업데이트"], ["SDV"]),
-    ("Automotive Cybersecurity", ["automotive cybersecurity", "vehicle cybersecurity", "iso 21434", "unece r155", "cybersecurity", "사이버보안"], ["SDV"]),
+    ("Automotive Cybersecurity", ["automotive cybersecurity", "vehicle cybersecurity", "iso 21434", "unece r155", "unece r156", "cybersecurity", "사이버보안"], ["SDV"]),
     ("Functional Safety", ["functional safety", "iso 26262", "asil", "기능안전"], []),
-    ("CI/CD", ["ci/cd", "continuous integration", "continuous delivery"], ["DevOps"]),
-    ("DevOps", ["devops", "automotive devops"], ["SDV"]),
-    ("Cloud", ["cloud", "aws automotive", "azure automotive", "google cloud automotive"], []),
+    ("CI/CD", ["ci/cd", "continuous integration", "continuous delivery", "sbom", "slsa"], ["DevOps"]),
+    ("DevOps", ["devops", "automotive devops", "devsecops", "virtual ecu", "v-ecu", "digital twin", "sil", "hil", "vil", "software-in-the-loop", "hardware-in-the-loop", "virtual validation"], ["SDV"]),
+    ("Cloud", ["cloud", "cloud-native", "container", "oci", "kubernetes", "aws automotive", "azure automotive", "google cloud automotive"], []),
     ("Autonomous Driving", ["autonomous driving", "self-driving cars", "self-driving", "robotaxis", "robotaxi", "autonomous vehicles", "autonomous vehicle", "자율주행", "로보택시", "fsd", "driverless"], ["ADAS"]),
     ("ADAS", ["adas", "advanced driver assistance", "운전자 보조", "lane keeping", "aeb"], []),
-    ("AI", ["artificial intelligence", "generative ai", "ai", "인공지능", "llm", "neural network"], []),
-    ("SDV", ["software-defined vehicles", "software-defined vehicle", "software defined vehicles", "software defined vehicle", "sdv", "sdvs", "소프트웨어 중심 자동차"], []),
+    ("AI", [
+        "artificial intelligence", "generative ai", "genai", "large language model",
+        "llm", "foundation model", "neural network", "neural networks",
+        "computer vision", "machine learning", "deep learning",
+        "ai assistant", "ai agent", "ai-powered", "ai-driven",
+        "인공지능", "머신러닝", "딥러닝", "a.i.", "ai"
+    ], []),
+    ("SDV", [
+        "software-defined vehicles", "software-defined vehicle", "software defined vehicles",
+        "software defined vehicle", "sdv", "sdvs", "소프트웨어 중심 자동차", "automotive software",
+        "vehicle software", "차량용 소프트웨어", "차량 소프트웨어",
+        "soafee", "eclipse sdv", "eclipse s-core", "covesa"
+    ], []),
     ("Euro 7", ["euro 7", "euro vii"], ["CO2", "Regulation"]),
     ("CO2", ["co2 emissions", "carbon emission", "co2", "배출가스"], ["Regulation"]),
     ("Tariff", ["tariffs", "tariff", "customs duty", "customs duties", "관세"], ["Trade", "Regulation"]),
@@ -228,7 +239,7 @@ def _contains_word(text: str, word: str) -> bool:
     if not word:
         return False
     # If the word contains non-ascii characters (e.g. Korean), direct search
-    if re.search(r"[^a-zA-Z0-9\s\-._]", word):
+    if re.search(r"[^a-zA-Z0-9\s\-._/]", word):
         return word.lower() in text.lower()
     pattern = rf"(?<![A-Za-z0-9]){re.escape(word)}(?![A-Za-z0-9])"
     return re.search(pattern, text, re.IGNORECASE) is not None

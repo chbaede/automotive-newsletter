@@ -191,3 +191,55 @@ def test_entity_normalization_across_aliases():
     assert "Forvia" in entities
     assert "CES" in entities
 
+
+def test_ai_topic_detection_precision_and_false_positive_prevention():
+    """Verify AI topic detection:
+
+    Matches true AI terms (generative AI, machine learning, LLM, AI-powered).
+    Does NOT match substring 'ai' inside words like said, Chairman, maintains, etc.
+    """
+    # True positives: MUST be classified with AI topic
+    true_positives = [
+        "New generative AI assistant for vehicles",
+        "Automaker expands machine learning platform",
+        "New automotive LLM announced",
+        "AI-powered driver assistance system",
+    ]
+    for text in true_positives:
+        topics = extract_topics(text)
+        assert "AI" in topics, f"Expected 'AI' topic in: {text}, got: {topics}"
+
+    # False positive traps: MUST NOT be classified with AI topic
+    false_positives = [
+        "The company said it will invest €2 billion",
+        "Chairman visits Germany",
+        "The automaker maintains production",
+        "Certain suppliers gain market share against rivals",
+    ]
+    for text in false_positives:
+        topics = extract_topics(text)
+        assert "AI" not in topics, f"Did NOT expect 'AI' topic in: {text}, got: {topics}"
+
+
+def test_automotive_software_ecosystem_and_virtualization_taxonomy():
+    """Verify expanded automotive software, virtualization, and ecosystem topics."""
+    # Virtualization & DevOps
+    t_virt = extract_topics("Tier 1 deploys virtual ECU simulation with hardware-in-the-loop validation")
+    assert "DevOps" in t_virt
+    assert "SDV" in t_virt
+
+    # Automotive Ecosystems (SOAFEE, Eclipse SDV)
+    t_eco = extract_topics("Automaker adopts SOAFEE and Eclipse SDV open source framework")
+    assert "SDV" in t_eco
+
+    # SOA, SOME/IP, Automotive Ethernet
+    t_soa = extract_topics("Zonal gateway with SOME/IP and Automotive Ethernet communication")
+    assert "SOA" in t_soa
+    assert "Middleware" in t_soa
+    assert "SDV" in t_soa
+
+    # Cybersecurity standards (ISO 21434, UNECE R155, UNECE R156)
+    t_sec = extract_topics("Compliance with UNECE R156 software update and ISO 21434 cybersecurity")
+    assert "Automotive Cybersecurity" in t_sec
+    assert "SDV" in t_sec
+

@@ -748,7 +748,7 @@ def _headline_signal(article: Article, title: str) -> str:
         return "신차·제품 전략 업데이트"
     if any(word in text for word in ["sales", "market", "outlook", "inflation", "gas prices", "consumer"]):
         return "수요·시장 전망 이슈"
-    if any(word in text for word in ["ai", "diagnostic", "repair"]):
+    if re.search(r"\b(ai|a\.i\.|artificial intelligence|generative ai|machine learning|diagnostic|repair)\b", text, re.IGNORECASE):
         return "AI·품질 데이터 활용 확대"
     if article.category == "institution":
         return "시장 전망과 업계 담론 업데이트"
