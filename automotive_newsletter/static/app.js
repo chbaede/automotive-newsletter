@@ -9,6 +9,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const mailSettingsForm = document.querySelector("[data-mail-settings-form]");
   const passwordState = document.querySelector("[data-password-state]");
   const regionButtons = Array.from(document.querySelectorAll("[data-region-filter]"));
+  const topicButtons = Array.from(document.querySelectorAll("[data-topic-filter]"));
+  const sourceTypeButtons = Array.from(document.querySelectorAll("[data-source-type-filter]"));
   const issueSections = Array.from(document.querySelectorAll(".issue-section"));
   const filterEmpty = document.querySelector("[data-filter-empty]");
   const viewTabs = Array.from(document.querySelectorAll("[data-view-tab]"));
@@ -130,12 +132,30 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  if (regionButtons.length > 0) {
-    const applyRegionFilter = (region) => {
+  if (regionButtons.length > 0 || topicButtons.length > 0 || sourceTypeButtons.length > 0) {
+    const activeFilters = {
+      region: "all",
+      topic: "all",
+      sourceType: "all",
+    };
+
+    const applyFilters = () => {
       let totalVisible = 0;
 
       regionButtons.forEach((button) => {
-        const isActive = button.dataset.regionFilter === region;
+        const isActive = button.dataset.regionFilter === activeFilters.region;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+
+      topicButtons.forEach((button) => {
+        const isActive = button.dataset.topicFilter === activeFilters.topic;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+
+      sourceTypeButtons.forEach((button) => {
+        const isActive = button.dataset.sourceTypeFilter === activeFilters.sourceType;
         button.classList.toggle("active", isActive);
         button.setAttribute("aria-pressed", isActive ? "true" : "false");
       });
@@ -145,8 +165,15 @@ document.addEventListener("DOMContentLoaded", () => {
         let visibleCount = 0;
 
         cards.forEach((card) => {
-          const regions = (card.dataset.regions || "").split(/\s+/).filter(Boolean);
-          const isVisible = region === "all" || regions.includes(region);
+          const regions = (card.dataset.filterRegions || card.dataset.regions || "").split(/\s+/).filter(Boolean);
+          const topics = (card.dataset.topics || "").split(/\s+/).filter(Boolean);
+          const sourceType = card.dataset.sourceType || "media";
+
+          const matchRegion = activeFilters.region === "all" || regions.includes(activeFilters.region);
+          const matchTopic = activeFilters.topic === "all" || topics.includes(activeFilters.topic);
+          const matchSourceType = activeFilters.sourceType === "all" || sourceType === activeFilters.sourceType;
+
+          const isVisible = matchRegion && matchTopic && matchSourceType;
           card.hidden = !isVisible;
           if (isVisible) {
             visibleCount += 1;
@@ -168,7 +195,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     regionButtons.forEach((button) => {
       button.addEventListener("click", () => {
-        applyRegionFilter(button.dataset.regionFilter || "all");
+        activeFilters.region = button.dataset.regionFilter || "all";
+        applyFilters();
+      });
+    });
+
+    topicButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        activeFilters.topic = button.dataset.topicFilter || "all";
+        applyFilters();
+      });
+    });
+
+    sourceTypeButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        activeFilters.sourceType = button.dataset.sourceTypeFilter || "all";
+        applyFilters();
       });
     });
   }

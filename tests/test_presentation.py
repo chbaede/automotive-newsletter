@@ -178,3 +178,62 @@ def test_display_event_coverage():
     assert cov["count"] == 4
     assert cov["label_ko"] == "4개 매체 보도 중"
     assert cov["label_en"] == "4 sources covering this event"
+
+
+def test_build_intelligence_sections():
+    from automotive_newsletter.models import NewsletterIssue
+    from automotive_newsletter.presentation import (
+        build_intelligence_sections,
+        canonical_source_type,
+        display_factual_summary_ko,
+        display_why_it_matters_ko,
+        topic_counts,
+        source_type_counts,
+    )
+
+    art_sdv = Article(
+        title="Bosch advances AUTOSAR and OTA middleware",
+        url="https://bosch.com/sdv",
+        source="Bosch",
+        category="sdv",
+        source_type="official",
+        summary_ko="보쉬가 신규 오토사 미들웨어를 공개했습니다.",
+        why_it_matters_ko="소프트웨어 중심 아키텍처 전환 가속화",
+        topics=["SDV", "AUTOSAR", "OTA"],
+    )
+    art_ev = Article(
+        title="CATL unveils new battery cell",
+        url="https://catl.com/battery",
+        source="CATL",
+        category="ev_battery",
+        source_type="media",
+        topics=["Battery", "EV"],
+    )
+
+    issue = NewsletterIssue(issue_date="2026-09-17", articles=[art_sdv, art_ev])
+    sections = build_intelligence_sections(issue, lang="ko")
+
+    assert len(sections) == 9
+    sdv_sec = next(s for s in sections if s["key"] == "software_sdv")
+    assert art_sdv in sdv_sec["articles"]
+    ev_sec = next(s for s in sections if s["key"] == "ev_battery")
+    assert art_ev in ev_sec["articles"]
+
+    # Factual summary and why it matters separation
+    assert display_factual_summary_ko(art_sdv) == "보쉬가 신규 오토사 미들웨어를 공개했습니다."
+    assert display_why_it_matters_ko(art_sdv) == "소프트웨어 중심 아키텍처 전환 가속화"
+
+    # Canonical source type
+    assert canonical_source_type(art_sdv) == "official"
+    assert canonical_source_type(art_ev) == "media"
+
+    # Multi-dimensional counts
+    t_counts = topic_counts(issue.articles)
+    assert t_counts["autosar"] == 1
+    assert t_counts["ota"] == 1
+    assert t_counts["battery"] == 1
+
+    st_counts = source_type_counts(issue.articles)
+    assert st_counts["official"] == 1
+    assert st_counts["media"] == 1
+

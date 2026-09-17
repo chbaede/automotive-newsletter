@@ -30,12 +30,19 @@ class RegionSignal:
     label_en: str
 
 
-REGION_FILTERS = [
+UI_REGION_FILTERS = [
     RegionSignal("all", "전체", "All"),
-    RegionSignal("us", "미국", "US"),
     RegionSignal("europe", "유럽", "Europe"),
-    RegionSignal("asia", "아시아", "Asia"),
+    RegionSignal("germany", "독일", "Germany"),
+    RegionSignal("korea", "한국", "Korea"),
+    RegionSignal("us", "미국", "US"),
     RegionSignal("global", "글로벌", "Global"),
+]
+
+# Preserves asia for backward compatibility with existing tests while offering full UI filters
+REGION_FILTERS = [
+    *UI_REGION_FILTERS,
+    RegionSignal("asia", "아시아", "Asia"),
 ]
 
 REGION_LABELS = {region.key: region.label_ko for region in REGION_FILTERS}
@@ -91,6 +98,53 @@ REGION_TERMS = {
         "schaeffler",
         "iaa",
         "automotive europe",
+        "acea",
+    ],
+    "germany": [
+        "germany",
+        "deutschland",
+        "german",
+        "berlin",
+        "munich",
+        "münchen",
+        "stuttgart",
+        "wolfsburg",
+        "ingolstadt",
+        "frankfurt",
+        "hannover",
+        "heise",
+        "electrive.net",
+        "bmw",
+        "volkswagen",
+        "mercedes",
+        "bosch",
+        "continental",
+        "zf",
+        "porsche",
+        "audi",
+        "kba",
+    ],
+    "korea": [
+        "korea",
+        "south korea",
+        "korean",
+        "seoul",
+        "hyundai",
+        "kia",
+        "genesis",
+        "mobis",
+        "hyundai mobis",
+        "현대",
+        "기아",
+        "한국",
+        "서울",
+        "남양",
+        "울산",
+        "화성",
+        "kama",
+        "samsung sdi",
+        "lg energy solution",
+        "sk on",
     ],
     "asia": [
         "asia",
@@ -118,6 +172,119 @@ REGION_TERMS = {
         "auto china",
     ],
 }
+
+
+@dataclass(frozen=True, slots=True)
+class TopicFilter:
+    key: str
+    label: str
+    terms: tuple[str, ...]
+
+
+TOPIC_FILTERS = [
+    TopicFilter("all", "All Topics", ()),
+    TopicFilter("sdv", "SDV", ("sdv", "software defined vehicle", "software-defined vehicle", "차량 소프트웨어", "차량 sw")),
+    TopicFilter("autosar", "AUTOSAR", ("autosar", "classic autosar", "adaptive autosar", "오토사")),
+    TopicFilter("ota", "OTA", ("ota", "over-the-air", "over the air", "무선 업데이트", "무선 펌웨어")),
+    TopicFilter("cybersecurity", "Cybersecurity", ("cybersecurity", "cyber security", "사이버보안", "보안", "iso/sae 21434", "wp.29 r155", "r155", "csms", "vulnerability")),
+    TopicFilter("adas", "ADAS", ("adas", "autonomous", "자율주행", "주행보조", "lidar", "radar", "camera", "라이다", "레이다", "level 3", "level 4", "fused sensor")),
+    TopicFilter("ev", "EV", ("ev", "electric vehicle", "전기차", "bev", "phev", "fcev", "전동화", "electrification")),
+    TopicFilter("battery", "Battery", ("battery", "배터리", "bms", "solid-state", "solid state", "전고체", "catl", "lfp", "ncm", "lithium")),
+    TopicFilter("ee_architecture", "E/E Architecture", ("e/e architecture", "zonal architecture", "zone controller", "zonal", "hpc", "vehicle computer", "중앙 집중형", "전자 아키텍처", "도메인 컨트롤러")),
+]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceTypeFilter:
+    key: str
+    label_en: str
+    label_ko: str
+
+
+SOURCE_TYPE_FILTERS = [
+    SourceTypeFilter("all", "All Sources", "전체"),
+    SourceTypeFilter("media", "Media", "언론"),
+    SourceTypeFilter("official", "Official", "공식"),
+    SourceTypeFilter("institution", "Institution", "기관"),
+    SourceTypeFilter("regulator", "Regulator", "규제 기구"),
+    SourceTypeFilter("research", "Research", "연구/분석"),
+]
+
+
+INTELLIGENCE_SECTION_DEFINITIONS = [
+    {
+        "key": "top_stories",
+        "label_en": "Top Stories",
+        "label_ko": "주요 뉴스 (Top Stories)",
+        "subtitle_en": "High impact automotive developments and strategic moves",
+        "subtitle_ko": "핵심 전략 및 주요 업계 동향",
+        "categories": {"big"},
+    },
+    {
+        "key": "oem",
+        "label_en": "OEM",
+        "label_ko": "완성차 (OEM)",
+        "subtitle_en": "Automaker strategy, vehicle programs and restructuring",
+        "subtitle_ko": "완성차 제조사 전략 및 신차 프로그램",
+        "categories": {"oem"},
+    },
+    {
+        "key": "tier1_supply",
+        "label_en": "Tier 1 / Supply Chain",
+        "label_ko": "Tier 1 / 공급망",
+        "subtitle_en": "Suppliers, components, manufacturing and logistics",
+        "subtitle_ko": "주요 부품사 및 글로벌 부품 공급망",
+        "categories": {"tier1", "supply_chain"},
+    },
+    {
+        "key": "software_sdv",
+        "label_en": "Software / SDV",
+        "label_ko": "소프트웨어 / SDV",
+        "subtitle_en": "E/E architecture, vehicle OS, middleware, OTA and cybersecurity",
+        "subtitle_ko": "차량용 SW, 전장 아키텍처, OTA 및 사이버보안",
+        "categories": {"sdv", "software", "cybersecurity"},
+    },
+    {
+        "key": "adas_autonomous",
+        "label_en": "ADAS / Autonomous",
+        "label_ko": "자율주행 / ADAS",
+        "subtitle_en": "Driver assistance, sensor fusion and autonomous driving systems",
+        "subtitle_ko": "첨단 운전자 보조 시스템 및 자율주행 기술",
+        "categories": {"adas_autonomous"},
+    },
+    {
+        "key": "ev_battery",
+        "label_en": "EV / Battery",
+        "label_ko": "전기차 / 배터리",
+        "subtitle_en": "Electrification, battery technology, chemistry and charging",
+        "subtitle_ko": "전기차 플랫폼, 배터리 셀 기술 및 충전 인프라",
+        "categories": {"ev_battery"},
+    },
+    {
+        "key": "regulation",
+        "label_en": "Regulation",
+        "label_ko": "정책 / 규제",
+        "subtitle_en": "Safety standards, emissions, tariffs and trade compliance",
+        "subtitle_ko": "각국 안전 기준, 배출 규제 및 무역 통상 정책",
+        "categories": {"regulation"},
+    },
+    {
+        "key": "market",
+        "label_en": "Market",
+        "label_ko": "시장 / 금융",
+        "subtitle_en": "Industry forecasts, sales figures, investments and earnings",
+        "subtitle_ko": "시장 점유율, 판매 실적 및 산업 투자 분석",
+        "categories": {"market", "manufacturing"},
+    },
+    {
+        "key": "conferences",
+        "label_en": "Conferences / Events",
+        "label_ko": "컨퍼런스 / 이벤트",
+        "subtitle_en": "Upcoming global automotive summits and technical events",
+        "subtitle_ko": "글로벌 모빌리티 컨퍼런스 및 기술 행사 일정",
+        "categories": {"conference"},
+    },
+]
 
 
 def display_title_ko(article: Article) -> str:
@@ -211,6 +378,7 @@ def display_event_coverage(article: Article) -> dict[str, object] | None:
         "regulatory_label_en": regulatory_label_en,
         "label_ko": f"{source_count}개 매체 보도 중",
         "label_en": f"{source_count} sources covering this event",
+        "event_title": getattr(article, "event_title", None) or article.title,
     }
 
 
@@ -226,13 +394,212 @@ def regions_for_article(article: Article) -> list[RegionSignal]:
     return [next(r for r in REGION_FILTERS if r.key == key) for key in matched]
 
 
+def all_region_keys_for_article(article: Article) -> list[str]:
+    text = _region_text(article)
+    keys = ["all"]
+    matched = False
+
+    if any(_contains_region_term(text, term) for term in REGION_TERMS["us"]):
+        keys.append("us")
+        matched = True
+    if any(_contains_region_term(text, term) for term in REGION_TERMS["europe"]):
+        keys.append("europe")
+        matched = True
+    if any(_contains_region_term(text, term) for term in REGION_TERMS["germany"]):
+        if "europe" not in keys:
+            keys.append("europe")
+        keys.append("germany")
+        matched = True
+    if any(_contains_region_term(text, term) for term in REGION_TERMS["korea"]):
+        keys.append("korea")
+        if "asia" not in keys:
+            keys.append("asia")
+        matched = True
+    if any(_contains_region_term(text, term) for term in REGION_TERMS["asia"]):
+        if "asia" not in keys:
+            keys.append("asia")
+        matched = True
+
+    if not matched:
+        keys.append("global")
+
+    return keys
+
+
 def region_counts(articles: list[Article]) -> dict[str, int]:
     counts = {region.key: 0 for region in REGION_FILTERS}
     counts["all"] = len(articles)
     for article in articles:
-        for region in regions_for_article(article):
-            counts[region.key] += 1
+        for r in regions_for_article(article):
+            if r.key in counts:
+                counts[r.key] += 1
+        sub_keys = set(all_region_keys_for_article(article))
+        if "germany" in sub_keys and "germany" in counts:
+            counts["germany"] += 1
+        if "korea" in sub_keys and "korea" in counts:
+            counts["korea"] += 1
     return counts
+
+
+def topics_for_article(article: Article) -> list[TopicFilter]:
+    search_text = f"{article.title} {article.summary_ko} {article.summary_en} {article.excerpt} {' '.join(article.tags)} {' '.join(getattr(article, 'topics', []))}".lower()
+    matched = []
+    for tf in TOPIC_FILTERS:
+        if tf.key == "all":
+            continue
+        if any(term in search_text for term in tf.terms):
+            matched.append(tf)
+    return matched
+
+
+def topic_keys_for_article(article: Article) -> list[str]:
+    keys = ["all"]
+    keys.extend(tf.key for tf in topics_for_article(article))
+    return keys
+
+
+def topic_counts(articles: list[Article]) -> dict[str, int]:
+    counts = {tf.key: 0 for tf in TOPIC_FILTERS}
+    counts["all"] = len(articles)
+    for article in articles:
+        for tf in topics_for_article(article):
+            counts[tf.key] += 1
+    return counts
+
+
+def canonical_source_type(article: Article) -> str:
+    st = (article.source_type or "").lower()
+    if article.is_official or st in {"official", "event"}:
+        return "official"
+    if st == "regulator":
+        return "regulator"
+    if st == "research":
+        return "research"
+    if st in {"institution", "open_source"}:
+        return "institution"
+    return "media"
+
+
+def source_type_keys_for_article(article: Article) -> list[str]:
+    return ["all", canonical_source_type(article)]
+
+
+def source_type_counts(articles: list[Article]) -> dict[str, int]:
+    counts = {stf.key: 0 for stf in SOURCE_TYPE_FILTERS}
+    counts["all"] = len(articles)
+    for article in articles:
+        st = canonical_source_type(article)
+        if st in counts:
+            counts[st] += 1
+    return counts
+
+
+def display_published_time(article: Article, lang: str = "ko") -> str:
+    val = article.published_at
+    if not val:
+        return ""
+    text = str(val).strip()
+    if "T" in text:
+        parts = text.split("T")
+        date_part = parts[0]
+        time_part = parts[1][:5]
+        return f"{date_part} {time_part}"
+    if len(text) >= 10:
+        return text[:16]
+    return text
+
+
+def display_factual_summary_ko(article: Article) -> str:
+    summary = article.summary_ko or summarize_article(replace(article, tags=visible_tags(article)))
+    summary = LEGACY_ORIGINAL_TITLE_RE.sub("", summary).strip()
+    clean = re.sub(r"\s*\[의미:.*?\]", "", summary).strip()
+    return clean or "핵심 동향을 확인할 수 있는 자동차 산업 기사입니다."
+
+
+def display_factual_summary_en(article: Article) -> str:
+    if article.summary_en:
+        return re.sub(r"\s*\[Why it matters:.*?\]", "", article.summary_en).strip()
+    if article.excerpt:
+        return article.excerpt.strip()
+    return "Reference briefing covering key automotive industry developments."
+
+
+def display_why_it_matters_ko(article: Article) -> str:
+    if article.why_it_matters_ko:
+        return article.why_it_matters_ko.strip()
+    priority = assess_priority(article)
+    return priority.reason_ko or ""
+
+
+def display_why_it_matters_en(article: Article) -> str:
+    priority = assess_priority(article)
+    return priority.reason_en or ""
+
+
+def display_primary_category(article: Article, lang: str = "ko") -> str:
+    cat = getattr(article, "primary_category", "") or article.category or "general"
+    is_en = lang == "en"
+    mapping = {
+        "big": "Top Stories" if is_en else "주요 뉴스",
+        "oem": "OEM",
+        "tier1": "Tier 1" if is_en else "부품사",
+        "supply_chain": "Supply Chain" if is_en else "공급망",
+        "sdv": "SDV",
+        "software": "Software" if is_en else "소프트웨어",
+        "cybersecurity": "Cybersecurity" if is_en else "사이버보안",
+        "adas_autonomous": "ADAS / Autonomous" if is_en else "자율주행",
+        "ev_battery": "EV / Battery" if is_en else "전기차 / 배터리",
+        "regulation": "Regulation" if is_en else "정책 / 규제",
+        "market": "Market" if is_en else "시장",
+        "manufacturing": "Manufacturing" if is_en else "제조",
+        "conference": "Conference" if is_en else "컨퍼런스",
+        "institution": "Institution" if is_en else "기관",
+        "reference": "Reference" if is_en else "참고",
+    }
+    return mapping.get(cat, cat.upper())
+
+
+def build_intelligence_sections(issue: NewsletterIssue, lang: str = "ko") -> list[dict[str, object]]:
+    is_en = lang == "en"
+    sections: list[dict[str, object]] = []
+    assigned_urls = set()
+
+    for defn in INTELLIGENCE_SECTION_DEFINITIONS:
+        cats = defn["categories"]
+        articles = [
+            a for a in issue.articles
+            if (a.category in cats or getattr(a, "primary_category", "") in cats)
+            and a.url not in assigned_urls
+        ]
+        for a in articles:
+            assigned_urls.add(a.url)
+
+        sort_cat = "conference" if defn["key"] == "conferences" else "standard"
+        sorted_articles = sort_articles_for_section(sort_cat, articles, issue.issue_date)
+        sections.append({
+            "key": defn["key"],
+            "label_en": defn["label_en"],
+            "label_ko": defn["label_ko"],
+            "label": defn["label_en"] if is_en else defn["label_ko"],
+            "subtitle_en": defn["subtitle_en"],
+            "subtitle_ko": defn["subtitle_ko"],
+            "subtitle": defn["subtitle_en"] if is_en else defn["subtitle_ko"],
+            "articles": sorted_articles,
+        })
+
+    leftovers = [a for a in issue.articles if a.url not in assigned_urls]
+    if leftovers:
+        for a in leftovers:
+            target_key = "regulation" if a.source_type in {"regulator", "institution"} else "market"
+            for sec in sections:
+                if sec["key"] == target_key:
+                    sec["articles"].append(a)
+                    break
+        for sec in sections:
+            if sec["key"] in {"regulation", "market"}:
+                sec["articles"] = sort_articles_for_section("standard", sec["articles"], issue.issue_date)
+
+    return sections
 
 
 def visible_tags(article: Article) -> list[str]:

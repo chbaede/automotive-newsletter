@@ -17,16 +17,32 @@ from .mailer import MailConfigError, send_issue
 from .models import NewsletterIssue
 from .presentation import (
     REGION_FILTERS,
+    SOURCE_TYPE_FILTERS,
+    TOPIC_FILTERS,
+    UI_REGION_FILTERS,
+    all_region_keys_for_article,
+    build_intelligence_sections,
+    canonical_source_type,
     display_event_coverage,
+    display_factual_summary_en,
+    display_factual_summary_ko,
     display_key_points,
-    display_summary_ko,
+    display_primary_category,
+    display_published_time,
     display_summary_en,
-    display_title_ko,
+    display_summary_ko,
     display_title_en,
+    display_title_ko,
     display_url,
+    display_why_it_matters_en,
+    display_why_it_matters_ko,
     region_counts,
     regions_for_article,
     sort_articles_for_section,
+    source_type_counts,
+    source_type_keys_for_article,
+    topic_counts,
+    topic_keys_for_article,
     visible_tags,
 )
 from .priority import assess_priority, priority_summary
@@ -147,18 +163,8 @@ def _render_index(
     sections = []
     displayed_articles = []
     if issue:
-        for category in SECTION_ORDER:
-            articles = [article for article in issue.articles if article.category == category]
-            articles = sort_articles_for_section(category, articles, issue.issue_date)
-            displayed_articles.extend(articles)
-            sections.append(
-                {
-                    "key": category,
-                    "label_ko": SECTION_LABELS[category],
-                    "label_en": SECTION_LABELS_EN[category],
-                    "articles": articles,
-                }
-            )
+        sections = build_intelligence_sections(issue, lang="ko")
+        displayed_articles = [article for sec in sections for article in sec["articles"]]
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -169,15 +175,30 @@ def _render_index(
             "today": date.today().isoformat(),
             "assess_priority": assess_priority,
             "display_event_coverage": display_event_coverage,
+            "display_factual_summary_ko": display_factual_summary_ko,
+            "display_factual_summary_en": display_factual_summary_en,
+            "display_why_it_matters_ko": display_why_it_matters_ko,
+            "display_why_it_matters_en": display_why_it_matters_en,
+            "display_primary_category": display_primary_category,
+            "display_published_time": display_published_time,
             "display_key_points": display_key_points,
             "display_summary_ko": display_summary_ko,
             "display_summary_en": display_summary_en,
             "display_title_ko": display_title_ko,
             "display_title_en": display_title_en,
             "display_url": display_url,
+            "canonical_source_type": canonical_source_type,
             "region_counts": region_counts(displayed_articles) if issue else {},
-            "region_filter_options": REGION_FILTERS,
+            "region_filter_options": UI_REGION_FILTERS,
+            "ui_region_filters": UI_REGION_FILTERS,
+            "topic_filters": TOPIC_FILTERS,
+            "topic_counts": topic_counts(displayed_articles) if issue else {},
+            "source_type_filters": SOURCE_TYPE_FILTERS,
+            "source_type_counts": source_type_counts(displayed_articles) if issue else {},
             "regions_for_article": regions_for_article,
+            "all_region_keys_for_article": all_region_keys_for_article,
+            "topic_keys_for_article": topic_keys_for_article,
+            "source_type_keys_for_article": source_type_keys_for_article,
             "visible_tags": visible_tags,
             "mail_settings": _public_mail_settings(settings, store.mail_settings()),
             "issue_metrics": _issue_metrics(displayed_articles) if issue else {},

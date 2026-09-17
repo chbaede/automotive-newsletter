@@ -74,7 +74,7 @@ class NewsletterStore:
                         discovered_via, source_type, source_authority, summary_en, why_it_matters_ko,
                         primary_category, secondary_categories, topics, entities,
                         source_score, relevance_score, impact_score, novelty_score, recency_score,
-                        priority_score, event_id, related_article_ids,
+                        priority_score, event_id, event_title, related_article_ids,
                         is_official, is_reference, is_primary_source, collected_at,
                         content, key_points, summary_model, summary_version, summary_created_at
                     )
@@ -85,7 +85,7 @@ class NewsletterStore:
                         ?, ?, ?, ?, ?,
                         ?, ?, ?, ?,
                         ?, ?, ?, ?, ?,
-                        ?, ?, ?,
+                        ?, ?, ?, ?,
                         ?, ?, ?, ?,
                         ?, ?, ?, ?, ?
                     )
@@ -123,6 +123,7 @@ class NewsletterStore:
                         article.recency_score,
                         article.priority_score,
                         article.event_id,
+                        article.event_title,
                         json.dumps(article.related_article_ids, ensure_ascii=False),
                         1 if article.is_official else 0,
                         1 if article.is_reference else 0,
@@ -256,6 +257,8 @@ class NewsletterStore:
         for art in articles:
             if art.event_id and art.event_id in event_dict:
                 ev = event_dict[art.event_id]
+                if not art.event_title:
+                    art.event_title = ev.title
                 art.event_source_count = ev.source_count
                 art.event_independent_source_count = ev.independent_source_count
                 art.event_has_official_source = ev.has_official_source
@@ -420,6 +423,7 @@ class NewsletterStore:
                     recency_score real not null default 0,
                     priority_score real not null default 0,
                     event_id text,
+                    event_title text,
                     related_article_ids text not null default '[]',
                     is_official integer not null default 0,
                     is_reference integer not null default 0,
@@ -461,6 +465,7 @@ class NewsletterStore:
                 ("recency_score", "real default 0"),
                 ("priority_score", "real default 0"),
                 ("event_id", "text"),
+                ("event_title", "text"),
                 ("related_article_ids", "text default '[]'"),
                 ("is_official", "integer default 0"),
                 ("is_reference", "integer default 0"),
@@ -597,6 +602,7 @@ class NewsletterStore:
         priority_score = float(get_val("priority_score", score))
 
         event_id = get_val("event_id")
+        event_title = get_val("event_title")
         related_article_ids = get_json_list("related_article_ids")
 
         is_official = bool(get_val("is_official", 0))
@@ -642,6 +648,7 @@ class NewsletterStore:
             recency_score=recency_score,
             priority_score=priority_score,
             event_id=event_id,
+            event_title=str(event_title) if event_title is not None else None,
             related_article_ids=related_article_ids,
             is_official=is_official,
             is_reference=is_reference,

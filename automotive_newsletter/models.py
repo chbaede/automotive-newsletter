@@ -89,6 +89,7 @@ class Article:
 
     # Relationships & Event Metadata
     event_id: str | None = None
+    event_title: str | None = None
     related_article_ids: list[str] = field(default_factory=list)
     event_source_count: int = 1
     event_independent_source_count: int = 1

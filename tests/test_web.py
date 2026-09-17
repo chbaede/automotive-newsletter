@@ -380,4 +380,107 @@ def test_home_renders_coverage_badge_for_clustered_articles(tmp_path):
     assert "coverage-badge" in response.text
 
 
+def test_home_renders_intelligence_sections_and_multidimensional_filters(tmp_path):
+    from fastapi.testclient import TestClient
+    from datetime import datetime, timezone
+    from automotive_newsletter.models import Event
+
+    store = NewsletterStore(tmp_path / "newsletter.db")
+    dt = datetime(2026, 9, 17, 10, 30, tzinfo=timezone.utc)
+    ev = Event(
+        event_id="evt_vw_sdv",
+        title="Volkswagen SDV Platform Acceleration",
+        category="sdv",
+        source_count=3,
+        independent_source_count=2,
+        has_official_source=True,
+        official_source_url="https://volkswagen-newsroom.com/en/releases/sdv-platform",
+        related_sources=["Automotive News Europe", "Reuters", "Handelsblatt"],
+    )
+    store.save_issue(
+        "2026-09-17",
+        [
+            Article(
+                title="Volkswagen accelerates software-defined vehicle platform in Germany",
+                url="https://example.com/vw-sdv",
+                source="Automotive News Europe",
+                category="sdv",
+                primary_category="sdv",
+                source_type="media",
+                published_at=dt,
+                summary_ko="폭스바겐이 독일 본사에서 차세대 SDV 소프트웨어 플랫폼 개발을 가속화합니다.",
+                why_it_matters_ko="유럽 완성차 진영의 차량용 OS 내재화 속도전 본격화",
+                topics=["SDV", "AUTOSAR", "OTA"],
+                event_id="evt_vw_sdv",
+                event_title="Volkswagen SDV Platform Acceleration",
+                related_article_ids=["art_reuters", "art_handelsblatt"],
+                event_source_count=3,
+                event_independent_source_count=2,
+                event_has_official_source=True,
+                event_official_source_url="https://volkswagen-newsroom.com/en/releases/sdv-platform",
+                event_related_sources=["Automotive News Europe", "Reuters", "Handelsblatt"],
+                score=88,
+            )
+        ],
+        events=[ev],
+    )
+    app = create_app(store=store)
+    client = TestClient(app)
+
+    response = client.get("/")
+    assert response.status_code == 200
+
+    # 1. Multi-dimensional filter panels
+    # Region filters
+    assert 'data-region-filter="all"' in response.text
+    assert 'data-region-filter="europe"' in response.text
+    assert 'data-region-filter="germany"' in response.text
+    assert 'data-region-filter="korea"' in response.text
+    assert 'data-region-filter="us"' in response.text
+    assert 'data-region-filter="global"' in response.text
+
+    # Topic filters
+    assert 'data-topic-filter="sdv"' in response.text
+    assert 'data-topic-filter="autosar"' in response.text
+    assert 'data-topic-filter="ota"' in response.text
+    assert 'data-topic-filter="cybersecurity"' in response.text
+    assert 'data-topic-filter="adas"' in response.text
+    assert 'data-topic-filter="ev"' in response.text
+    assert 'data-topic-filter="battery"' in response.text
+    assert 'data-topic-filter="ee_architecture"' in response.text
+
+    # Source type filters
+    assert 'data-source-type-filter="media"' in response.text
+    assert 'data-source-type-filter="official"' in response.text
+    assert 'data-source-type-filter="institution"' in response.text
+    assert 'data-source-type-filter="regulator"' in response.text
+
+    # 2. Intelligence Section rendering
+    assert 'id="software_sdv"' in response.text
+    assert "소프트웨어 / SDV" in response.text
+    assert "Software / SDV" in response.text
+
+    # 3. Article card contents
+    assert "폭스바겐이 독일 본사에서 차세대 SDV" in response.text
+    assert "Why it matters:" in response.text
+    assert "유럽 완성차 진영의 차량용 OS 내재화 속도전 본격화" in response.text
+    assert "Automotive News Europe" in response.text
+    assert "2026-09-17 10:30" in response.text
+
+    # 4. Clustered event coverage box
+    assert "Volkswagen SDV Platform Acceleration" in response.text
+    assert "3개 매체 보도 중" in response.text
+    assert "2개 독립 매체" in response.text
+    assert "공식 출처 제공" in response.text
+    assert "Automotive News Europe, Reuters, Handelsblatt" in response.text
+    assert 'href="https://volkswagen-newsroom.com/en/releases/sdv-platform"' in response.text
+
+    # 5. Data attributes for multi-dimensional filtering
+    assert 'data-filter-regions=' in response.text
+    assert 'germany' in response.text
+    assert 'data-topics=' in response.text
+    assert 'data-source-type="media"' in response.text
+
+
+
 

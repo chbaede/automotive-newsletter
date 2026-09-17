@@ -7,12 +7,20 @@ from email.message import EmailMessage
 from .config import Settings, load_settings
 from .models import NewsletterIssue
 from .presentation import (
+    build_intelligence_sections,
+    canonical_source_type,
     display_event_coverage,
-    display_summary_ko,
+    display_factual_summary_en,
+    display_factual_summary_ko,
+    display_primary_category,
+    display_published_time,
     display_summary_en,
-    display_title_ko,
+    display_summary_ko,
     display_title_en,
+    display_title_ko,
     display_url,
+    display_why_it_matters_en,
+    display_why_it_matters_ko,
     regions_for_article,
     sort_articles_for_section,
     visible_tags,
@@ -123,17 +131,25 @@ def build_email_text(issue: NewsletterIssue, lang: str = "ko") -> str:
             title = display_title_en(article) if is_en else display_title_ko(article)
             reason = priority.reason_en if is_en else priority.reason_ko
             summary = display_summary_en(article) if is_en else display_summary_ko(article)
+            cat_label = display_primary_category(article, lang=lang)
+            publisher = article.publisher or article.source
             
-            lines.append(f"- [{p_label}] {title}")
+            lines.append(f"- [{p_label}] [{cat_label}] {title}")
             lines.append(f"  Score: {priority.score} / {reason}" if is_en else f"  중요도: {priority.score} / {reason}")
             lines.append(f"  {summary}")
             
+            why_text = display_why_it_matters_en(article) if is_en else display_why_it_matters_ko(article)
+            if why_text and why_text != reason:
+                lines.append(f"  Why it matters: {why_text}")
+            
             region_label = ", ".join(region.label_en if is_en else region.label_ko for region in regions_for_article(article))
             lines.append(f"  Region: {region_label}" if is_en else f"  지역: {region_label}")
-            lines.append(f"  Source: {article.source}" if is_en else f"  출처: {article.source}")
+            lines.append(f"  Source: {publisher}" if is_en else f"  출처: {publisher}")
 
             coverage = display_event_coverage(article)
             if coverage:
+                if coverage.get("source_count", 1) > 1 and coverage.get("event_title"):
+                    lines.append(f"  Event: {coverage['event_title']}")
                 cov_parts = [str(coverage["source_label_en"] if is_en else coverage["source_label_ko"])]
                 if coverage["independent_source_count"] < coverage["source_count"]:
                     cov_parts.append(str(coverage["independent_label_en"] if is_en else coverage["independent_label_ko"]))
@@ -177,16 +193,12 @@ def send_issue(issue: NewsletterIssue, settings: Settings | None = None, lang: s
 
 
 def _email_sections(issue: NewsletterIssue, lang: str = "ko") -> list[tuple[str, str, list]]:
-    sections = []
-    for category in SECTION_ORDER:
-        articles = sort_articles_for_section(
-            category,
-            [article for article in issue.articles if article.category == category],
-            issue.issue_date,
-        )
-        label = SECTION_LABELS_EN[category] if lang == "en" else SECTION_LABELS[category]
-        sections.append((category, label, articles))
-    return sections
+    intel_sections = build_intelligence_sections(issue, lang=lang)
+    return [
+        (str(sec["key"]), str(sec["label"]), list(sec["articles"]))
+        for sec in intel_sections
+        if sec["articles"]
+    ]
 
 
 def _email_metrics(sections: list[tuple[str, str, list]]) -> dict[str, int]:
@@ -239,16 +251,15 @@ def _article_card_html(article, lang: str = "ko") -> str:
     source_url = display_url(article)
     region_label = ", ".join((region.label_en if is_en else region.label_ko) for region in regions_for_article(article))
     tags = visible_tags(article)
-    tag_html = ""
-    if tags:
-        tag_html = (
-            '<div style="margin-top:12px;">'
-            + "".join(
-                f'<span style="display:inline-block;margin:0 5px 5px 0;padding:4px 8px;border-radius:999px;background-color:#e8f2ef;color:#14534d;font-size:12px;font-weight:700;">{html.escape(tag)}</span>'
-                for tag in tags[:6]
-            )
-            + "</div>"
-        )
+    topics = getattr(article, "topics", [])
+    
+    tag_pills = []
+    for top in topics:
+        tag_pills.append(f'<span style="display:inline-block;margin:0 5px 5px 0;padding:4px 8px;border-radius:999px;background-color:#e0f2fe;color:#0369a1;font-size:12px;font-weight:700;">{html.escape(top)}</span>')
+    for tag in tags[:6]:
+        tag_pills.append(f'<span style="display:inline-block;margin:0 5px 5px 0;padding:4px 8px;border-radius:999px;background-color:#e8f2ef;color:#14534d;font-size:12px;font-weight:700;">{html.escape(tag)}</span>')
+    
+    tag_html = f'<div style="margin-top:12px;">{"".join(tag_pills)}</div>' if tag_pills else ""
     
     link_text = "Read Original" if is_en else "원문 보기"
     no_link_text = "Link Pending" if is_en else "원문 확인 중"
@@ -260,8 +271,8 @@ def _article_card_html(article, lang: str = "ko") -> str:
     )
 
     coverage = display_event_coverage(article)
+    cluster_box_html = ""
     coverage_badges_html = ""
-    related_sources_html = ""
     official_cta_html = ""
     if coverage:
         pills = [
@@ -285,12 +296,22 @@ def _article_card_html(article, lang: str = "ko") -> str:
             )
         coverage_badges_html = f'<div style="margin-top:4px;margin-bottom:6px;">{"".join(pills)}</div>'
 
-        related_srcs = coverage.get("related_sources", [])
-        if len(related_srcs) > 1:
-            rel_label = "Related Sources: " if is_en else "관련 출처: "
-            related_sources_html = (
-                f'<p style="margin:8px 0 0;color:#657285;font-size:12px;line-height:1.4;">'
-                f'<strong style="color:#475569;">{rel_label}</strong>{html.escape(", ".join(related_srcs))}</p>'
+        if coverage["source_count"] > 1:
+            ev_title = coverage.get("event_title") or (display_title_en(article) if is_en else display_title_ko(article))
+            related_srcs = coverage.get("related_sources", [])
+            rel_html = ""
+            if len(related_srcs) > 1:
+                rel_label = "Related Sources: " if is_en else "관련 출처: "
+                rel_html = (
+                    f'<p style="margin:6px 0 0;color:#657285;font-size:12px;line-height:1.4;">'
+                    f'<strong style="color:#475569;">{rel_label}</strong>{html.escape(", ".join(related_srcs))}</p>'
+                )
+            cluster_box_html = (
+                f'<div style="margin-top:12px;padding:10px 12px;border-radius:6px;background-color:#f0f9ff;border:1px solid #bae6fd;">'
+                f'<div style="font-weight:800;font-size:13px;color:#0c4a6e;margin-bottom:6px;">{html.escape(str(ev_title))}</div>'
+                f'{coverage_badges_html}'
+                f'{rel_html}'
+                f'</div>'
             )
 
         if coverage.get("official_source_url") and coverage["official_source_url"] != source_url:
@@ -306,6 +327,22 @@ def _article_card_html(article, lang: str = "ko") -> str:
     reason = priority.reason_en if is_en else priority.reason_ko
     summary = display_summary_en(article) if is_en else display_summary_ko(article)
     
+    cat_label = display_primary_category(article, lang=lang)
+    publisher = article.publisher or article.source
+    pub_time = display_published_time(article, lang=lang)
+    pub_time_html = f' · <span style="color:#657285;font-size:11px;">{html.escape(pub_time)}</span>' if pub_time else ""
+    
+    why_text = display_why_it_matters_en(article) if is_en else display_why_it_matters_ko(article)
+    why_html = ""
+    if why_text and why_text != reason:
+        why_label = "Why it matters:"
+        why_html = (
+            f'<div style="margin-top:9px;padding:8px 10px;border-radius:6px;background-color:#f8fafc;border-left:3px solid #0f766e;">'
+            f'<strong style="color:#0f766e;font-size:11px;text-transform:uppercase;">{why_label}</strong>'
+            f'<p style="margin:2px 0 0;color:#1e293b;font-size:13px;line-height:1.5;font-weight:600;">{html.escape(why_text)}</p>'
+            f'</div>'
+        )
+    
     region_prefix = "Region: " if is_en else "지역: "
     source_prefix = "Source: " if is_en else "출처: "
     
@@ -315,14 +352,16 @@ def _article_card_html(article, lang: str = "ko") -> str:
         '<tr><td style="padding:16px 18px 17px;">'
         '<div style="margin-bottom:8px;">'
         f'<span class="priority-badge" style="display:inline-block;margin:0 8px 7px 0;padding:5px 9px;border-radius:999px;background-color:{colors["solid"]};color:#ffffff;font-size:12px;line-height:1.2;font-weight:800;">{html.escape(p_label)} · {priority.score}</span>'
-        f'<span style="display:inline-block;margin-bottom:7px;color:#657285;font-size:12px;line-height:1.2;font-weight:700;">{html.escape(article.source)}</span>'
-        f"{coverage_badges_html}"
+        f'<span style="display:inline-block;margin:0 6px 7px 0;padding:4px 8px;border-radius:4px;background-color:#f1f5f9;color:#334155;font-size:11px;line-height:1.2;font-weight:700;">{html.escape(cat_label)}</span>'
+        f'<span style="display:inline-block;margin-bottom:7px;color:#657285;font-size:12px;line-height:1.2;font-weight:700;">{html.escape(publisher)}{pub_time_html}</span>'
+        f"{coverage_badges_html if not cluster_box_html else ''}"
         "</div>"
         f'<h3 style="margin:0 0 9px;font-size:18px;line-height:1.38;color:#18202a;">{html.escape(title)}</h3>'
         f'<p style="margin:0 0 10px;padding:9px 10px;border-radius:8px;background-color:{colors["soft"]};color:{colors["text"]};font-size:13px;line-height:1.55;font-weight:700;">{html.escape(reason)}</p>'
         f'<p style="margin:0;color:#334155;font-size:14px;line-height:1.62;">{html.escape(summary)}</p>'
-        f'<p style="margin:12px 0 0;color:#657285;font-size:12px;line-height:1.55;">{region_prefix}{html.escape(region_label)} · {source_prefix}{html.escape(article.source)}</p>'
-        f"{related_sources_html}"
+        f"{why_html}"
+        f"{cluster_box_html}"
+        f'<p style="margin:12px 0 0;color:#657285;font-size:12px;line-height:1.55;">{region_prefix}{html.escape(region_label)} · {source_prefix}{html.escape(publisher)}</p>'
         f"{tag_html}{cta_html}{official_cta_html}"
         "</td></tr></table>"
     )

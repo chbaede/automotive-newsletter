@@ -579,6 +579,7 @@ def cluster_articles(
         cluster_article_ids = [a.article_id for a in cluster if a.article_id]
         for article in cluster:
             article.event_id = event_id
+            article.event_title = event.title
             article.related_article_ids = [
                 aid for aid in cluster_article_ids if aid != article.article_id
             ]

@@ -255,33 +255,84 @@
           </details>
         {% endif %}
 
-        <section class="filter-panel" data-region-filter-panel aria-label="지역 필터">
-          <div class="filter-panel__heading">
-            <p class="eyebrow">Region</p>
-            <h3>
+        <section class="filter-panel" data-filter-panel aria-label="필터 패널">
+          <div class="filter-group">
+            <div class="filter-group__heading">
+              <i data-lucide="globe"></i>
               <span class="lang-ko">지역 필터</span>
               <span class="lang-en" style="display:none;">Region Filter</span>
-            </h3>
+            </div>
+            <div class="filter-pills" role="group" aria-label="지역 필터">
+              {% for region in region_filter_options %}
+                <button
+                  type="button"
+                  class="filter-pill {% if region.key == 'all' %}active{% endif %}"
+                  data-region-filter="{{ region.key }}"
+                  aria-pressed="{% if region.key == 'all' %}true{% else %}false{% endif %}"
+                >
+                  <span>
+                    <span class="lang-ko">{{ region.label_ko }}</span>
+                    <span class="lang-en" style="display:none;">{{ region.label_en }}</span>
+                  </span>
+                  <small>{{ region_counts.get(region.key, 0) }}</small>
+                </button>
+              {% endfor %}
+            </div>
           </div>
-          <div class="region-filter" role="group" aria-label="지역 필터">
-            {% for region in region_filter_options %}
-              <button
-                type="button"
-                class="region-filter__button {% if region.key == 'all' %}active{% endif %}"
-                data-region-filter="{{ region.key }}"
-                aria-pressed="{% if region.key == 'all' %}true{% else %}false{% endif %}"
-              >
-                <span>
-                  <span class="lang-ko">{{ region.label_ko }}</span>
-                  <span class="lang-en" style="display:none;">{{ region.label_en }}</span>
-                </span>
-                <small>{{ region_counts[region.key] }}</small>
-              </button>
-            {% endfor %}
+
+          <div class="filter-group">
+            <div class="filter-group__heading">
+              <i data-lucide="cpu"></i>
+              <span class="lang-ko">토픽 필터</span>
+              <span class="lang-en" style="display:none;">Topic Filter</span>
+            </div>
+            <div class="filter-pills" role="group" aria-label="토픽 필터">
+              {% for tf in topic_filters %}
+                <button
+                  type="button"
+                  class="filter-pill {% if tf.key == 'all' %}active{% endif %}"
+                  data-topic-filter="{{ tf.key }}"
+                  aria-pressed="{% if tf.key == 'all' %}true{% else %}false{% endif %}"
+                >
+                  <span>
+                    <span class="lang-ko">{{ tf.label_ko }}</span>
+                    <span class="lang-en" style="display:none;">{{ tf.label_en }}</span>
+                  </span>
+                  <small>{{ topic_counts.get(tf.key, 0) }}</small>
+                </button>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <div class="filter-group__heading">
+              <i data-lucide="shield-check"></i>
+              <span class="lang-ko">출처 유형</span>
+              <span class="lang-en" style="display:none;">Source Type</span>
+            </div>
+            <div class="filter-pills" role="group" aria-label="출처 유형">
+              {% for st in source_type_filters %}
+                <button
+                  type="button"
+                  class="filter-pill {% if st.key == 'all' %}active{% endif %}"
+                  data-source-type-filter="{{ st.key }}"
+                  aria-pressed="{% if st.key == 'all' %}true{% else %}false{% endif %}"
+                >
+                  <span>
+                    <span class="lang-ko">{{ st.label_ko }}</span>
+                    <span class="lang-en" style="display:none;">{{ st.label_en }}</span>
+                  </span>
+                  <small>{{ source_type_counts.get(st.key, 0) }}</small>
+                </button>
+              {% endfor %}
+            </div>
           </div>
         </section>
 
-        <p class="empty-note filter-empty" data-filter-empty hidden>선택한 지역 뉴스가 없습니다.</p>
+        <p class="empty-note filter-empty" data-filter-empty hidden>
+          <span class="lang-ko">선택한 조건(지역/토픽/출처)에 해당하는 뉴스가 없습니다.</span>
+          <span class="lang-en" style="display:none;">No articles match the selected filters.</span>
+        </p>
 
         <!-- Google AdSense Unit (In-feed) -->
         <div class="ad-banner-wrapper" aria-label="광고">
@@ -298,12 +349,21 @@
         </div>
 
         {% for section in sections %}
+          {% if section.articles %}
           <section class="issue-section" id="{{ section.key }}">
             <div class="section-heading">
-              <h3>
-                <span class="lang-ko">{{ section.label_ko }}</span>
-                <span class="lang-en" style="display:none;">{{ section.label_en }}</span>
-              </h3>
+              <div>
+                <h3>
+                  <span class="lang-ko">{{ section.label_ko }}</span>
+                  <span class="lang-en" style="display:none;">{{ section.label_en }}</span>
+                </h3>
+                {% if section.subtitle_ko %}
+                  <p class="section-subtitle">
+                    <span class="lang-ko">{{ section.subtitle_ko }}</span>
+                    <span class="lang-en" style="display:none;">{{ section.subtitle_en }}</span>
+                  </p>
+                {% endif %}
+              </div>
               <span data-section-count>{{ section.articles|length }}<span class="lang-ko">건</span><span class="lang-en" style="display:none;"> items</span></span>
             </div>
             <div class="article-grid">
@@ -311,16 +371,110 @@
                 {% set priority = assess_priority(article) %}
                 {% set source_url = display_url(article) %}
                 {% set article_regions = regions_for_article(article) %}
+                {% set coverage = display_event_coverage(article) %}
+                {% set pub_time = display_published_time(article) %}
+                {% set why_ko = display_why_it_matters_ko(article) %}
+                {% set why_en = display_why_it_matters_en(article) %}
+                {% set fact_ko = display_factual_summary_ko(article) %}
+                {% set fact_en = display_factual_summary_en(article) %}
+                {% set st_type = canonical_source_type(article) %}
                 <article
                   class="article-card article-card--{{ priority.level }}"
                   data-priority="{{ priority.level }}"
                   data-regions="{% for region in article_regions %}{{ region.key }}{% if not loop.last %} {% endif %}{% endfor %}"
+                  data-filter-regions="{{ ' '.join(all_region_keys_for_article(article)) }}"
+                  data-topics="{{ ' '.join(topic_keys_for_article(article)) }}"
+                  data-source-type="{{ st_type }}"
                 >
                   <div class="article-card__top">
                     <div class="article-source-group">
-                      <span class="source-name">{{ article.source }}</span>
-                      {% set coverage = display_event_coverage(article) %}
-                      {% if coverage %}
+                      <span class="category-badge">
+                        <span class="lang-ko">{{ display_primary_category(article, 'ko') }}</span>
+                        <span class="lang-en" style="display:none;">{{ display_primary_category(article, 'en') }}</span>
+                      </span>
+                      <span class="source-type-pill source-type-pill--{{ st_type }}">
+                        {% if st_type == 'official' %}
+                          <i data-lucide="shield-check"></i>
+                          <span class="lang-ko">공식</span>
+                          <span class="lang-en" style="display:none;">Official</span>
+                        {% elif st_type == 'regulator' %}
+                          <i data-lucide="landmark"></i>
+                          <span class="lang-ko">규제</span>
+                          <span class="lang-en" style="display:none;">Regulator</span>
+                        {% elif st_type == 'institution' %}
+                          <i data-lucide="building"></i>
+                          <span class="lang-ko">기관</span>
+                          <span class="lang-en" style="display:none;">Institution</span>
+                        {% elif st_type == 'research' %}
+                          <i data-lucide="file-text"></i>
+                          <span class="lang-ko">연구</span>
+                          <span class="lang-en" style="display:none;">Research</span>
+                        {% else %}
+                          <i data-lucide="newspaper"></i>
+                          <span class="lang-ko">언론</span>
+                          <span class="lang-en" style="display:none;">Media</span>
+                        {% endif %}
+                      </span>
+                      <span class="source-name">{{ article.publisher or article.source }}</span>
+                      {% if pub_time %}
+                        <time class="published-time">{{ pub_time }}</time>
+                      {% endif %}
+                    </div>
+                    <span class="priority-pill priority-pill--{{ priority.level }}">
+                      <span class="lang-ko">{{ priority.label_ko }}</span>
+                      <span class="lang-en" style="display:none;">{{ priority.label_en }}</span>
+                    </span>
+                  </div>
+
+                  <div class="region-tags">
+                    {% for region in article_regions %}
+                      <span class="region-tag region-tag--{{ region.key }}">
+                        <span class="lang-ko">{{ region.label_ko }}</span>
+                        <span class="lang-en" style="display:none;">{{ region.label_en }}</span>
+                      </span>
+                    {% endfor %}
+                  </div>
+
+                  <h4>
+                    {% if source_url %}
+                      <a href="{{ source_url }}" target="_blank" rel="noreferrer" class="article-title-link">
+                        <span class="lang-ko">{{ display_title_ko(article) }}</span>
+                        <span class="lang-en" style="display:none;">{{ display_title_en(article) }}</span>
+                      </a>
+                    {% else %}
+                      <span class="lang-ko">{{ display_title_ko(article) }}</span>
+                      <span class="lang-en" style="display:none;">{{ display_title_en(article) }}</span>
+                    {% endif %}
+                  </h4>
+
+                  <div class="article-summary-block">
+                    <p class="factual-summary">
+                      <span class="lang-ko">{{ fact_ko }}</span>
+                      <span class="lang-en" style="display:none;">{{ fact_en }}</span>
+                    </p>
+                  </div>
+
+                  {% if why_ko or why_en %}
+                    <div class="why-it-matters-box">
+                      <div class="why-it-matters-label">
+                        <i data-lucide="zap"></i>
+                        <span class="lang-ko">Why it matters:</span>
+                        <span class="lang-en" style="display:none;">Why it matters:</span>
+                      </div>
+                      <p class="why-it-matters-text">
+                        <span class="lang-ko">{{ why_ko }}</span>
+                        <span class="lang-en" style="display:none;">{{ why_en }}</span>
+                      </p>
+                    </div>
+                  {% endif %}
+
+                  {% if coverage and coverage.source_count > 1 %}
+                    <div class="event-cluster-box">
+                      <div class="event-cluster-header">
+                        <i data-lucide="git-branch"></i>
+                        <strong class="event-cluster-title">{{ coverage.event_title or display_title_en(article) }}</strong>
+                      </div>
+                      <div class="event-cluster-badges">
                         <span class="coverage-badge" title="{{ coverage.label_en }}">
                           <i data-lucide="layers"></i>
                           <span class="lang-ko">{{ coverage.label_ko }}</span>
@@ -346,50 +500,31 @@
                             <span class="lang-en" style="display:none;">{{ coverage.regulatory_label_en }}</span>
                           </span>
                         {% endif %}
+                      </div>
+                      {% if coverage.related_sources and coverage.related_sources|length > 1 %}
+                        <p class="related-sources-line">
+                          <span class="related-sources-label">
+                            <span class="lang-ko">관련 출처:</span>
+                            <span class="lang-en" style="display:none;">Related Sources:</span>
+                          </span>
+                          <span>{{ coverage.related_sources|join(', ') }}</span>
+                        </p>
                       {% endif %}
                     </div>
-                    <span class="priority-pill priority-pill--{{ priority.level }}">
-                      <span class="lang-ko">{{ priority.label_ko }}</span>
-                      <span class="lang-en" style="display:none;">{{ priority.label_en }}</span>
-                    </span>
-                  </div>
-                  <div class="region-tags">
-                    {% for region in article_regions %}
-                      <span class="region-tag region-tag--{{ region.key }}">
-                        <span class="lang-ko">{{ region.label_ko }}</span>
-                        <span class="lang-en" style="display:none;">{{ region.label_en }}</span>
-                      </span>
-                    {% endfor %}
-                  </div>
-                  <h4>
-                    <span class="lang-ko">{{ display_title_ko(article) }}</span>
-                    <span class="lang-en" style="display:none;">{{ display_title_en(article) }}</span>
-                  </h4>
-                  <p class="priority-reason">
-                    <span class="lang-ko">{{ priority.reason_ko }}</span>
-                    <span class="lang-en" style="display:none;">{{ priority.reason_en }}</span>
-                  </p>
-                  <p>
-                    <span class="lang-ko">{{ display_summary_ko(article) }}</span>
-                    <span class="lang-en" style="display:none;">{{ display_summary_en(article) }}</span>
-                  </p>
+                  {% endif %}
+
                   {% set user_tags = visible_tags(article) %}
-                  {% if user_tags %}
+                  {% if user_tags or article.topics %}
                     <div class="tags">
+                      {% for top in article.topics %}
+                        <span class="tag-topic">{{ top }}</span>
+                      {% endfor %}
                       {% for tag in user_tags %}
                         <span>{{ tag }}</span>
                       {% endfor %}
                     </div>
                   {% endif %}
-                  {% if coverage and coverage.related_sources|length > 1 %}
-                    <p class="related-sources-line">
-                      <span class="related-sources-label">
-                        <span class="lang-ko">관련 출처:</span>
-                        <span class="lang-en" style="display:none;">Related Sources:</span>
-                      </span>
-                      <span>{{ coverage.related_sources|join(', ') }}</span>
-                    </p>
-                  {% endif %}
+
                   <div class="article-links">
                     {% if source_url %}
                       <a class="source-link" href="{{ source_url }}" target="_blank" rel="noreferrer">
@@ -419,14 +554,10 @@
                     {% endif %}
                   </div>
                 </article>
-              {% else %}
-                <p class="empty-note">
-                  <span class="lang-ko">이번 이슈에는 해당 섹션 기사가 없습니다.</span>
-                  <span class="lang-en" style="display:none;">No articles in this section for this issue.</span>
-                </p>
               {% endfor %}
             </div>
           </section>
+          {% endif %}
         {% endfor %}
 
         <!-- Google AdSense Unit (Bottom Banner) -->
