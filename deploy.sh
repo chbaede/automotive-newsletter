@@ -20,7 +20,7 @@ APP_NAME="${APP_NAME:-automotive-newsletter}"
 IMAGE_NAME="${IMAGE_NAME:-automotive-newsletter:latest}"
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="${PROJECT_DIR}/data"
-TIMEZONE="${TZ:-Asia/Seoul}"
+TIMEZONE="${TZ:-${NEWSLETTER_TIMEZONE:-Europe/Berlin}}"
 COLLECTION_TIME="${DAILY_COLLECTION_TIME:-06:00}"
 
 echo "=========================================="
@@ -62,6 +62,7 @@ docker run -d \
   -e ENABLE_DAILY_SCHEDULER=true \
   -e DAILY_COLLECTION_TIME="${COLLECTION_TIME}" \
   -e TZ="${TIMEZONE}" \
+  -e NEWSLETTER_TIMEZONE="${TIMEZONE}" \
   -e ADMIN_KEY="${ADMIN_KEY}" \
   --restart unless-stopped \
   "${IMAGE_NAME}"

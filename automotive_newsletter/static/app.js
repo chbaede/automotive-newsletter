@@ -29,7 +29,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const adminHeaders = () => {
     const key = getAdminKey();
-    return key ? { "X-Admin-Key": key } : {};
+    return key ? { "X-Admin-Key": key, "Authorization": `Bearer ${key}` } : {};
   };
 
   const checkAdminMode = () => {
@@ -41,16 +41,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  // Check URL query parameters (?admin=KEY or ?key=KEY)
-  const urlParams = new URLSearchParams(window.location.search);
-  const secretKey = urlParams.get("admin") || urlParams.get("key");
-  if (secretKey) {
-    localStorage.setItem("admin_key", secretKey.trim());
-    urlParams.delete("admin");
-    urlParams.delete("key");
-    const newQuery = urlParams.toString() ? `?${urlParams.toString()}` : "";
-    window.history.replaceState({}, document.title, window.location.pathname + newQuery + window.location.hash);
-  }
   checkAdminMode();
 
   // Secret trigger: clicking .brand-mark 5 times

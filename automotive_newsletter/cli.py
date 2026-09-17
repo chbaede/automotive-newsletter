@@ -23,19 +23,21 @@ def main(argv: list[str] | None = None) -> int:
 
     collect_parser = subparsers.add_parser("collect", help="Collect and store today's issue")
     collect_parser.add_argument("--date", dest="issue_date")
+    collect_parser.add_argument("--force", action="store_true", help="Force collection even if already completed")
 
     send_parser = subparsers.add_parser("send", help="Send an issue by email")
     send_parser.add_argument("--date", dest="issue_date")
 
     subparsers.add_parser("sources", help="Check external feed health")
 
-    schedule_parser = subparsers.add_parser("schedule", help="Collect once per day")
+    schedule_parser = subparsers.add_parser("schedule", help="Collect once per day with robust scheduler")
     schedule_parser.add_argument("--time", dest="collection_time")
 
     args = parser.parse_args(argv)
     command = args.command or "serve"
 
     if command == "serve":
+        settings = load_settings()
         uvicorn.run(
             "automotive_newsletter.web:create_app",
             factory=True,
@@ -43,18 +45,34 @@ def main(argv: list[str] | None = None) -> int:
             port=args.port,
             reload=args.reload,
             proxy_headers=True,
-            forwarded_allow_ips="*",
+            forwarded_allow_ips=settings.forwarded_allow_ips,
         )
         return 0
     if command == "collect":
+        from .config import get_newsletter_timezone
+        from .scheduler import run_collection_job
+
         settings = load_settings()
-        issue = collect_and_store(
-            store=NewsletterStore(settings.db_path),
+        tz = get_newsletter_timezone(settings.newsletter_timezone)
+        issue_date = args.issue_date or datetime.now(tz).strftime("%Y-%m-%d")
+        store = NewsletterStore(settings.db_path)
+        if not args.force and store.has_daily_run_completed(issue_date):
+            print(f"collection for {issue_date} has already completed (use --force to re-collect)")
+            return 0
+        success = run_collection_job(
+            store=store,
             settings=settings,
-            issue_date=args.issue_date,
+            issue_date=issue_date,
+            force=args.force,
         )
-        print(f"saved {issue.issue_date}: {len(issue.articles)} articles")
-        return 0
+        if success:
+            issue = store.get_issue(issue_date)
+            count = len(issue.articles) if issue else 0
+            print(f"saved {issue_date}: {count} articles")
+            return 0
+        else:
+            print(f"collection for {issue_date} skipped (another worker is currently collecting)")
+            return 0
     if command == "send":
         settings = load_settings()
         store = NewsletterStore(settings.db_path)
@@ -80,29 +98,19 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{diag}{tls}{error}")
         return 1 if any(not row["ok"] for row in rows) else 0
     if command == "schedule":
+        from .scheduler import DailyScheduler
+
         settings = load_settings()
-        collection_time = args.collection_time or settings.daily_collection_time
-        return run_schedule(collection_time)
+        if args.collection_time:
+            settings.daily_collection_time = args.collection_time
+        scheduler = DailyScheduler(settings=settings)
+        print(
+            f"daily collection scheduled for {settings.daily_collection_time} ({settings.newsletter_timezone})"
+        )
+        try:
+            scheduler.run_loop()
+        except (KeyboardInterrupt, SystemExit):
+            print("\nscheduler stopped")
+        return 0
     parser.print_help()
     return 1
-
-
-def run_schedule(collection_time: str) -> int:
-    print(f"daily collection scheduled for {collection_time}")
-    last_run: str | None = None
-    while True:
-        try:
-            now = datetime.now()
-            today = date.today().isoformat()
-            if now.strftime("%H:%M") == collection_time and last_run != today:
-                settings = load_settings()
-                issue = collect_and_store(
-                    store=NewsletterStore(settings.db_path),
-                    settings=settings,
-                    issue_date=today,
-                )
-                print(f"saved {issue.issue_date}: {len(issue.articles)} articles")
-                last_run = today
-        except Exception as exc:
-            print(f"error during scheduled collection: {exc}")
-        time.sleep(30)

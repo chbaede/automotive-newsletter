@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hmac
 import threading
 import time
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -12,7 +14,8 @@ from fastapi.templating import Jinja2Templates
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .collector import check_feed_health, collect_and_store
-from .config import Settings, load_settings, settings_with_mail_overrides
+from .config import Settings, get_newsletter_timezone, load_settings, settings_with_mail_overrides
+from .logging import logger
 from .mailer import MailConfigError, send_issue
 from .models import NewsletterIssue
 from .presentation import (
@@ -46,6 +49,7 @@ from .presentation import (
     visible_tags,
 )
 from .priority import assess_priority, priority_summary
+from .scheduler import DailyScheduler
 from .sources import SECTION_LABELS, SECTION_LABELS_EN, SECTION_ORDER
 from .store import NewsletterStore
 
@@ -57,7 +61,10 @@ def create_app(store: NewsletterStore | None = None, settings: Settings | None =
     settings = settings or load_settings()
     store = store or NewsletterStore(settings.db_path)
     app = FastAPI(title="Automotive Newsletter")
-    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
+    proxies = (settings.trusted_proxies or "127.0.0.1,::1").strip()
+    trusted = "*" if proxies == "*" else [h.strip() for h in proxies.split(",") if h.strip()]
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted)
     app.state.store = store
     app.state.settings = settings
     app.mount("/static", StaticFiles(directory=str(PACKAGE_DIR / "static")), name="static")
@@ -87,8 +94,18 @@ def create_app(store: NewsletterStore | None = None, settings: Settings | None =
     def _is_admin(request: Request) -> bool:
         if not settings.admin_key:
             return True
-        key = request.headers.get("X-Admin-Key") or request.query_params.get("admin_key")
-        return key == settings.admin_key
+        key = request.headers.get("X-Admin-Key")
+        if not key:
+            auth = request.headers.get("Authorization")
+            if auth:
+                parts = auth.split()
+                if len(parts) == 2 and parts[0].lower() in {"bearer", "token"}:
+                    key = parts[1]
+                elif len(parts) == 1:
+                    key = parts[0]
+        if not key:
+            return False
+        return hmac.compare_digest(key.encode("utf-8"), settings.admin_key.encode("utf-8"))
 
     @app.get("/api/admin/verify")
     def verify_admin(request: Request) -> JSONResponse:
@@ -98,7 +115,9 @@ def create_app(store: NewsletterStore | None = None, settings: Settings | None =
     def collect_today(request: Request) -> JSONResponse:
         if not _is_admin(request):
             return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=401)
-        issue = collect_and_store(store=store, settings=settings, issue_date=date.today().isoformat())
+        tz = get_newsletter_timezone(settings.newsletter_timezone)
+        today = datetime.now(tz).strftime("%Y-%m-%d")
+        issue = collect_and_store(store=store, settings=settings, issue_date=today)
         return JSONResponse({"ok": True, "issue_date": issue.issue_date, "articles": len(issue.articles)})
 
     @app.post("/api/issues/{issue_date}/send")
@@ -145,8 +164,52 @@ def create_app(store: NewsletterStore | None = None, settings: Settings | None =
         return JSONResponse({"ok": True, "sources": check_feed_health(settings=settings)})
 
     @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    def health() -> JSONResponse:
+        try:
+            store.list_issues()
+        except Exception as exc:
+            logger.error(
+                component="web",
+                event="health_check_failed",
+                source="database",
+                error=str(exc),
+            )
+            return JSONResponse(
+                {
+                    "status": "unhealthy",
+                    "components": {"web": "healthy", "database": "unhealthy"},
+                    "error": "database connection error",
+                },
+                status_code=503,
+            )
+
+        latest_metrics = store.get_latest_collection_metrics()
+        feeds_failed = 0
+        if latest_metrics:
+            feeds_failed = int(latest_metrics.get("feeds_failed", 0))
+
+        is_degraded = feeds_failed > 0
+        status_str = "degraded" if is_degraded else "healthy"
+        response_data: dict[str, Any] = {
+            "status": status_str,
+            "components": {
+                "web": "healthy",
+                "database": "healthy",
+            },
+            "metrics": latest_metrics or {
+                "feeds_total": 0,
+                "feeds_ok": 0,
+                "feeds_failed": 0,
+                "articles_collected": 0,
+                "articles_after_dedupe": 0,
+                "articles_selected": 0,
+                "collection_duration": 0.0,
+            },
+        }
+        if is_degraded:
+            response_data["details"] = f"web healthy but {feeds_failed} feeds failed in latest collection"
+
+        return JSONResponse(response_data, status_code=200)
 
     if settings.enable_daily_scheduler:
         start_daily_scheduler(app, collection_time=settings.daily_collection_time)
@@ -316,28 +379,9 @@ def _normalize_mail_settings_payload(
 
 
 def start_daily_scheduler(app: FastAPI, collection_time: str) -> None:
-    state = {"last_run": None}
-
-    def loop() -> None:
-        print(f"[{datetime.now()}] Daily collection scheduler started (time: {collection_time})")
-        while True:
-            try:
-                now = datetime.now()
-                today = date.today().isoformat()
-                if now.strftime("%H:%M") == collection_time and state["last_run"] != today:
-                    print(f"[{datetime.now()}] Starting scheduled daily collection for {today}...")
-                    issue = collect_and_store(
-                        store=app.state.store,
-                        settings=app.state.settings,
-                        issue_date=today,
-                    )
-                    state["last_run"] = today
-                    print(f"[{datetime.now()}] Scheduled collection complete: {len(issue.articles)} articles")
-            except Exception as exc:
-                print(f"[{datetime.now()}] Error during scheduled collection: {exc}")
-            time.sleep(30)
+    scheduler = DailyScheduler(store=app.state.store, settings=app.state.settings)
 
     @app.on_event("startup")
     def _start_scheduler() -> None:
-        thread = threading.Thread(target=loop, daemon=True)
+        thread = threading.Thread(target=scheduler.run_loop, daemon=True)
         thread.start()

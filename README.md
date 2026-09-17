@@ -29,21 +29,149 @@ NEWSLETTER_TO=recipient@example.com
 SMTP_TLS=true
 ```
 
-## 매일 수집
-
-서버가 켜져 있을 때 자동 수집하려면:
+## CLI 명령어 (CLI Usage)
 
 ```bash
-ENABLE_DAILY_SCHEDULER=true
-DAILY_COLLECTION_TIME=06:00
-python -m automotive_newsletter serve
+# 1. 웹 서버 실행 (Forwarded proxy 및 trusted host 보안 설정 적용)
+automotive-newsletter serve --host 127.0.0.1 --port 8000
+
+# 2. 오늘자 기사 수집 및 저장 (타임존 명시 및 중복/동시성 락 방지)
+automotive-newsletter collect
+
+# 강제 재수집 (--force)
+automotive-newsletter collect --force
+
+# 특정 날짜 수집
+automotive-newsletter collect --date 2026-09-17
+
+# 3. 단독 스케줄러 프로세스 실행 (서버 재시작 대응, missed execution 자동 catch-up)
+automotive-newsletter schedule --time 06:00
+
+# 4. 발행된 뉴스레터 이메일 발송
+automotive-newsletter send --date 2026-09-17
+
+# 5. 소스 피드 헬스 체크
+automotive-newsletter sources
 ```
 
-또는 장시간 실행 프로세스로:
+## 프로덕션 스케줄링 가이드 (Production Scheduling)
+
+FastAPI 웹 프로세스에서 긴 sleep 루프를 실행하는 대신, 웹 프로세스와 스케줄링을 분리하는 것을 권장합니다.
+
+### 1) Cron 스케줄링 (권장)
+호스트 또는 컨테이너 크론탭에 다음과 같이 등록합니다 (`crontab -e`):
+
+```cron
+# 매일 오전 06:00 (Europe/Berlin 기준) 수집 실행
+NEWSLETTER_TIMEZONE=Europe/Berlin
+0 6 * * * /app/.venv/bin/automotive-newsletter collect >> /var/log/newsletter-cron.log 2>&1
+```
+
+### 2) Systemd Timer (Linux 배포)
+`/etc/systemd/system/automotive-newsletter-collect.service`:
+```ini
+[Unit]
+Description=Automotive Newsletter Daily Collection
+After=network.target
+
+[Service]
+Type=oneshot
+User=newsletter
+WorkingDirectory=/opt/automotive-newsletter
+EnvironmentFile=/opt/automotive-newsletter/.env
+ExecStart=/opt/automotive-newsletter/.venv/bin/automotive-newsletter collect
+```
+
+`/etc/systemd/system/automotive-newsletter-collect.timer`:
+```ini
+[Unit]
+Description=Run Automotive Newsletter collection daily at 06:00 Europe/Berlin
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 Europe/Berlin
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
 
 ```bash
-python -m automotive_newsletter schedule
+systemctl daemon-reload
+systemctl enable --now automotive-newsletter-collect.timer
 ```
+`Persistent=true` 설정으로 서버가 06:00에 꺼져 있었더라도 부팅 후 누락된 수집을 즉시 자동 실행(catch-up)합니다.
+
+### 3) Docker Compose 아키텍처
+웹 서비스와 스케줄러 컨테이너를 분리하여 운영:
+
+```yaml
+version: '3.8'
+
+services:
+  web:
+    image: automotive-newsletter:latest
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - newsletter-data:/app/data
+    environment:
+      - NEWSLETTER_TIMEZONE=Europe/Berlin
+      - TRUSTED_PROXIES=127.0.0.1,::1
+      - FORWARDED_ALLOW_IPS=127.0.0.1,::1
+      - ADMIN_KEY_FILE=/run/secrets/admin_key
+      - SMTP_PASSWORD_FILE=/run/secrets/smtp_password
+    secrets:
+      - admin_key
+      - smtp_password
+    restart: unless-stopped
+
+  scheduler:
+    image: automotive-newsletter:latest
+    command: ["automotive-newsletter", "schedule", "--time", "06:00"]
+    volumes:
+      - newsletter-data:/app/data
+    environment:
+      - NEWSLETTER_TIMEZONE=Europe/Berlin
+    secrets:
+      - admin_key
+      - smtp_password
+    restart: unless-stopped
+
+volumes:
+  newsletter-data:
+
+secrets:
+  admin_key:
+    file: ./secrets/admin_key.txt
+  smtp_password:
+    file: ./secrets/smtp_password.txt
+```
+
+---
+
+## 프로덕션 보안 & 모니터링 (Production Security & Observability)
+
+### 1) 관리자 인증 보안 (Admin Security)
+- 관리자 키는 URL 쿼리 파라미터(`?admin_key=...`)로 전송되지 않으며, 서버 로그 및 브라우저 히스토리에 노출되지 않습니다.
+- HTTP 헤더 `X-Admin-Key` 또는 `Authorization: Bearer <key>` 헤더를 통해서만 수락됩니다.
+- 상수 시간 비교(`hmac.compare_digest`)를 사용하여 타이밍 공격을 방지합니다.
+
+### 2) 비밀번호 보안 (SMTP & Admin Secrets)
+- 비밀번호는 SQLite DB에 평문 저장하지 않고 환경 변수(`SMTP_PASSWORD`) 또는 Docker Secret 파일(`/run/secrets/smtp_password`) 사용을 권장합니다.
+
+### 3) 프록시 및 신뢰 호스트 보안 (Reverse Proxy Hardening)
+- `TRUSTED_PROXIES` 및 `FORWARDED_ALLOW_IPS`는 기본적으로 루프백(`127.0.0.1,::1`)으로 제한되며, 와일드카드(`*`)는 명시적으로 설정된 경우에만 활성화됩니다.
+
+### 4) 구조화된 로깅 (Structured JSON Logging)
+- 수집 및 스케줄러 이벤트는 표준 JSON 형태로 출력되어 Datadog, CloudWatch, ELK 등 로그 수집기에 직접 연동됩니다:
+  `{"timestamp": "...", "level": "INFO", "component": "collector", "source": "reuters", "event": "feed_fetch_ok", "duration": 0.45, "error": null}`
+
+### 5) 헬스체크 (`/health`) 및 수집 메트릭
+- 웹 및 DB 상태, 최신 수집 메트릭을 제공합니다:
+  - `healthy`: 정상 동작 중
+  - `degraded`: 웹/DB는 정상이나 최근 수집에서 피드 실패(`feeds_failed > 0`) 발생
+- 메트릭 항목: `feeds_total`, `feeds_ok`, `feeds_failed`, `articles_collected`, `articles_after_dedupe`, `articles_selected`, `collection_duration`
+- 민감한 인증 정보는 일체 노출되지 않습니다.
 
 ## 수집 옵션
 

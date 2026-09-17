@@ -181,6 +181,28 @@ class EventArticle:
 
 
 @dataclass(slots=True)
+class CollectionMetrics:
+    feeds_total: int = 0
+    feeds_ok: int = 0
+    feeds_failed: int = 0
+    articles_collected: int = 0
+    articles_after_dedupe: int = 0
+    articles_selected: int = 0
+    collection_duration: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "feeds_total": self.feeds_total,
+            "feeds_ok": self.feeds_ok,
+            "feeds_failed": self.feeds_failed,
+            "articles_collected": self.articles_collected,
+            "articles_after_dedupe": self.articles_after_dedupe,
+            "articles_selected": self.articles_selected,
+            "collection_duration": round(self.collection_duration, 4),
+        }
+
+
+@dataclass(slots=True)
 class NewsletterIssue:
     issue_date: str
     articles: list[Article] = field(default_factory=list)
@@ -189,4 +211,5 @@ class NewsletterIssue:
     created_at: datetime | None = None
     sent_at: datetime | None = None
     events: list[Event] = field(default_factory=list)
+    metrics: dict[str, Any] = field(default_factory=dict)
 

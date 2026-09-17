@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from .models import Article, Event, EventArticle, NewsletterIssue
 
@@ -22,11 +23,13 @@ class NewsletterStore:
         warnings: list[str] | None = None,
         events: Iterable[Event] | None = None,
         event_articles: Iterable[EventArticle] | None = None,
+        metrics: dict[str, Any] | None = None,
     ) -> NewsletterIssue:
         now = datetime.now(timezone.utc).isoformat()
         article_list = list(articles)
         event_list = list(events) if events is not None else []
         event_article_list = list(event_articles) if event_articles is not None else []
+        metrics_payload = json.dumps(metrics or {}, ensure_ascii=False)
         with self._connect() as conn:
             existing = conn.execute(
                 "select id from issues where issue_date = ?", (issue_date,)
@@ -34,10 +37,11 @@ class NewsletterStore:
             if existing:
                 issue_id = existing["id"]
                 conn.execute(
-                    "update issues set title = ?, warnings = ?, updated_at = ? where id = ?",
+                    "update issues set title = ?, warnings = ?, metrics = ?, updated_at = ? where id = ?",
                     (
                         f"{issue_date} Automotive Newsletter",
                         json.dumps(warnings or [], ensure_ascii=False),
+                        metrics_payload,
                         now,
                         issue_id,
                     ),
@@ -51,13 +55,14 @@ class NewsletterStore:
             else:
                 cursor = conn.execute(
                     """
-                    insert into issues (issue_date, title, warnings, created_at, updated_at)
-                    values (?, ?, ?, ?, ?)
+                    insert into issues (issue_date, title, warnings, metrics, created_at, updated_at)
+                    values (?, ?, ?, ?, ?, ?)
                     """,
                     (
                         issue_date,
                         f"{issue_date} Automotive Newsletter",
                         json.dumps(warnings or [], ensure_ascii=False),
+                        metrics_payload,
                         now,
                         now,
                     ),
@@ -271,6 +276,12 @@ class NewsletterStore:
 
         created_at = _parse_datetime(issue_row["created_at"])
         sent_at = _parse_datetime(issue_row["sent_at"])
+        metrics = {}
+        if "metrics" in issue_row.keys() and issue_row["metrics"]:
+            try:
+                metrics = json.loads(issue_row["metrics"])
+            except Exception:
+                metrics = {}
         return NewsletterIssue(
             issue_date=issue_row["issue_date"],
             title=issue_row["title"],
@@ -279,6 +290,7 @@ class NewsletterStore:
             created_at=created_at,
             sent_at=sent_at,
             events=events,
+            metrics=metrics,
         )
 
     def get_event_articles(self, event_id: str) -> list[EventArticle]:
@@ -357,6 +369,9 @@ class NewsletterStore:
 
     def save_mail_settings(self, values: dict[str, object]) -> None:
         now = datetime.now(timezone.utc).isoformat()
+        to_save = dict(values)
+        if os.getenv("SMTP_PASSWORD") or os.getenv("SMTP_PASSWORD_FILE"):
+            to_save.pop("smtp_password", None)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -364,7 +379,7 @@ class NewsletterStore:
                 values (?, ?, ?)
                 on conflict(key) do update set value = excluded.value, updated_at = excluded.updated_at
                 """,
-                ("mail", json.dumps(values, ensure_ascii=False), now),
+                ("mail", json.dumps(to_save, ensure_ascii=False), now),
             )
 
     def _connect(self) -> sqlite3.Connection:
@@ -545,6 +560,162 @@ class NewsletterStore:
                 )
                 """
             )
+
+            # Migration for issues table to support metrics
+            existing_issue_columns = {
+                row["name"] for row in conn.execute("pragma table_info(issues)").fetchall()
+            }
+            if "metrics" not in existing_issue_columns:
+                conn.execute("alter table issues add column metrics text not null default '{}'")
+
+            # Table for distributed scheduler coordination and run tracking
+            conn.execute(
+                """
+                create table if not exists scheduler_runs (
+                    id integer primary key autoincrement,
+                    job_name text not null,
+                    run_date text not null,
+                    status text not null,
+                    started_at text not null,
+                    finished_at text,
+                    metrics text not null default '{}',
+                    error text,
+                    unique(job_name, run_date)
+                )
+                """
+            )
+
+    def acquire_daily_run(
+        self,
+        run_date: str,
+        job_name: str = "daily_collection",
+        timeout_minutes: int = 30,
+    ) -> bool:
+        """Atomic reservation for a daily job to prevent duplicate / concurrent worker runs."""
+        now = datetime.now(timezone.utc)
+        now_iso = now.isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                "select status, started_at from scheduler_runs where job_name = ? and run_date = ?",
+                (job_name, run_date),
+            ).fetchone()
+            if row is not None:
+                status = row["status"]
+                if status == "completed":
+                    return False
+                if status == "running":
+                    started = _parse_datetime(row["started_at"])
+                    if started and (now - started).total_seconds() < timeout_minutes * 60:
+                        return False  # Still actively running by another worker
+                    # Otherwise timed out / crashed worker: re-claim lock
+                    conn.execute(
+                        "update scheduler_runs set status = 'running', started_at = ?, error = null where job_name = ? and run_date = ?",
+                        (now_iso, job_name, run_date),
+                    )
+                    return True
+                # if failed, allow retry
+                conn.execute(
+                    "update scheduler_runs set status = 'running', started_at = ?, error = null where job_name = ? and run_date = ?",
+                    (now_iso, job_name, run_date),
+                )
+                return True
+            try:
+                conn.execute(
+                    "insert into scheduler_runs (job_name, run_date, status, started_at, metrics) values (?, ?, 'running', ?, '{}')",
+                    (job_name, run_date, now_iso),
+                )
+                return True
+            except sqlite3.IntegrityError:
+                return False
+
+    def finish_daily_run(
+        self,
+        run_date: str,
+        metrics: dict[str, Any] | None = None,
+        job_name: str = "daily_collection",
+        status: str = "completed",
+    ) -> None:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        metrics_json = json.dumps(metrics or {}, ensure_ascii=False)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                insert into scheduler_runs (job_name, run_date, status, started_at, finished_at, metrics, error)
+                values (?, ?, ?, ?, ?, ?, null)
+                on conflict(job_name, run_date) do update set
+                    status = excluded.status,
+                    finished_at = excluded.finished_at,
+                    metrics = excluded.metrics,
+                    error = null
+                """,
+                (job_name, run_date, status, now_iso, now_iso, metrics_json),
+            )
+
+    def fail_daily_run(
+        self,
+        run_date: str,
+        error: str,
+        job_name: str = "daily_collection",
+    ) -> None:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                insert into scheduler_runs (job_name, run_date, status, started_at, finished_at, error)
+                values (?, ?, 'failed', ?, ?, ?)
+                on conflict(job_name, run_date) do update set
+                    status = 'failed',
+                    finished_at = excluded.finished_at,
+                    error = excluded.error
+                """,
+                (job_name, run_date, now_iso, now_iso, str(error)),
+            )
+
+    def has_daily_run_completed(self, run_date: str, job_name: str = "daily_collection") -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "select status from scheduler_runs where job_name = ? and run_date = ?",
+                (job_name, run_date),
+            ).fetchone()
+            if row and row["status"] == "completed":
+                return True
+            issue_row = conn.execute(
+                "select id from issues where issue_date = ?", (run_date,)
+            ).fetchone()
+            return issue_row is not None
+
+    def get_latest_run(self, job_name: str = "daily_collection") -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "select job_name, run_date, status, started_at, finished_at, metrics, error from scheduler_runs where job_name = ? order by started_at desc limit 1",
+                (job_name,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "job_name": row["job_name"],
+            "run_date": row["run_date"],
+            "status": row["status"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+            "metrics": json.loads(row["metrics"] or "{}"),
+            "error": row["error"],
+        }
+
+    def get_latest_collection_metrics(self) -> dict[str, Any] | None:
+        run = self.get_latest_run("daily_collection")
+        if run and run.get("metrics"):
+            return run["metrics"]
+        with self._connect() as conn:
+            row = conn.execute(
+                "select metrics from issues order by issue_date desc limit 1"
+            ).fetchone()
+        if row and row["metrics"]:
+            try:
+                return json.loads(row["metrics"])
+            except Exception:
+                pass
+        return None
 
     @staticmethod
     def _row_to_article(row: sqlite3.Row) -> Article:

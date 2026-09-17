@@ -17,7 +17,8 @@ from bs4 import BeautifulSoup
 from .clustering import cluster_articles
 from .config import Settings, load_settings
 from .content_extractor import extract_usable_article_text
-from .models import Article, FeedEntry, NewsletterIssue
+from .logging import logger
+from .models import Article, CollectionMetrics, FeedEntry, NewsletterIssue
 from .sources import (
     DEFAULT_FEEDS,
     SECTION_ORDER,
@@ -231,27 +232,74 @@ def collect_and_store(
     feeds: list[SourceFeed] | None = None,
     summarizer: BaseSummarizer | None = None,
 ) -> NewsletterIssue:
+    t0 = time.perf_counter()
     settings = settings or load_settings()
     store = store or NewsletterStore(settings.db_path)
     summarizer = summarizer or get_summarizer(settings)
     issue_date = issue_date or date.today().isoformat()
+
+    logger.info(component="collector", event="collection_started", source="collector")
     recent_articles = store.get_recent_articles(before_issue_date=issue_date, days=7)
     feeds_to_fetch = feeds if feeds is not None else get_enabled_sources()
-    entries, warnings = fetch_feed_entries(feeds_to_fetch, settings=settings)
-    articles = build_issue_articles(
-        entries, recent_articles=recent_articles, summarizer=summarizer
-    )
-    articles = ensure_required_fallbacks(articles, issue_date=issue_date)
-    events, event_articles, _ = cluster_articles(articles)
-    if not articles and warnings:
-        warnings = [*warnings, "수집된 기사가 없어 빈 이슈를 저장했습니다."]
-    return store.save_issue(
-        issue_date,
-        articles,
-        warnings=warnings,
-        events=events,
-        event_articles=event_articles,
-    )
+
+    try:
+        entries, warnings, stats = fetch_feed_entries(  # type: ignore[misc]
+            feeds_to_fetch, settings=settings, return_stats=True
+        )
+        raw_count = len(entries)
+        deduped_articles, _ = collect_from_entries(
+            entries, recent_articles=recent_articles, summarizer=summarizer
+        )
+        articles_after_dedupe = len(deduped_articles)
+
+        articles = build_issue_articles(
+            deduped_articles, recent_articles=recent_articles, summarizer=summarizer
+        )
+        articles = ensure_required_fallbacks(articles, issue_date=issue_date)
+        articles_selected = len(articles)
+
+        events, event_articles, _ = cluster_articles(articles)
+        if not articles and warnings:
+            warnings = [*warnings, "수집된 기사가 없어 빈 이슈를 저장했습니다."]
+
+        duration = time.perf_counter() - t0
+        metrics = CollectionMetrics(
+            feeds_total=stats.get("feeds_total", len(feeds_to_fetch)),
+            feeds_ok=stats.get("feeds_ok", 0),
+            feeds_failed=stats.get("feeds_failed", 0),
+            articles_collected=raw_count,
+            articles_after_dedupe=articles_after_dedupe,
+            articles_selected=articles_selected,
+            collection_duration=round(duration, 4),
+        ).to_dict()
+
+        issue = store.save_issue(
+            issue_date,
+            articles,
+            warnings=warnings,
+            events=events,
+            event_articles=event_articles,
+            metrics=metrics,
+        )
+        store.finish_daily_run(issue_date, metrics=metrics)
+        logger.info(
+            component="collector",
+            event="collection_completed",
+            source="collector",
+            duration=duration,
+        )
+        return issue
+    except Exception as exc:
+        duration = time.perf_counter() - t0
+        logger.error(
+            component="collector",
+            event="collection_failed",
+            source="collector",
+            duration=duration,
+            error=str(exc),
+        )
+        store.fail_daily_run(issue_date, error=str(exc))
+        raise
 
 
 def ensure_required_fallbacks(
@@ -645,18 +693,25 @@ def _format_event_date_range(start: date, end: date) -> str:
 
 
 def fetch_feed_entries(
-    feeds: Iterable[SourceFeed], settings: Settings | None = None
-) -> tuple[list[FeedEntry], list[str]]:
+    feeds: Iterable[SourceFeed],
+    settings: Settings | None = None,
+    return_stats: bool = False,
+) -> tuple[list[FeedEntry], list[str]] | tuple[list[FeedEntry], list[str], dict[str, int]]:
     settings = settings or load_settings()
     entries: list[FeedEntry] = []
     warnings: list[str] = []
     warned_tls_fallback = False
+    feeds_total = 0
+    feeds_ok = 0
+    feeds_failed = 0
     with _feed_client(settings, verify=settings.verify_tls) as client, _feed_client(
         settings, verify=False
     ) as insecure_client:
         for feed in feeds:
             if not feed.enabled:
                 continue
+            feeds_total += 1
+            feed_start = time.perf_counter()
             try:
                 response, used_tls_fallback = _get_with_tls_fallback(
                     feed.url,
@@ -671,10 +726,34 @@ def fetch_feed_entries(
                 parsed = feedparser.parse(response.content)
             except Exception as exc:
                 warnings.append(f"{feed.name}: {exc}")
+                feeds_failed += 1
+                logger.warning(
+                    component="collector",
+                    event="feed_fetch_failed",
+                    source=feed.id or feed.name,
+                    duration=time.perf_counter() - feed_start,
+                    error=str(exc),
+                )
                 continue
             if getattr(parsed, "bozo", False) and not parsed.entries:
                 warnings.append(f"{feed.name}: 피드 파싱 실패")
+                feeds_failed += 1
+                logger.warning(
+                    component="collector",
+                    event="feed_fetch_failed",
+                    source=feed.id or feed.name,
+                    duration=time.perf_counter() - feed_start,
+                    error="피드 파싱 실패",
+                )
                 continue
+
+            feeds_ok += 1
+            logger.info(
+                component="collector",
+                event="feed_fetch_ok",
+                source=feed.id or feed.name,
+                duration=time.perf_counter() - feed_start,
+            )
             for raw in parsed.entries[: settings.max_entries_per_feed]:
                 title = raw.get("title", "")
                 url = raw.get("link", "")
@@ -722,6 +801,13 @@ def fetch_feed_entries(
                     )
                 )
                 time.sleep(0.02)
+    stats = {
+        "feeds_total": feeds_total,
+        "feeds_ok": feeds_ok,
+        "feeds_failed": feeds_failed,
+    }
+    if return_stats:
+        return entries, warnings, stats
     return entries, warnings
 
 
