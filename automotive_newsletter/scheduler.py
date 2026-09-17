@@ -163,3 +163,4 @@ class DailyScheduler:
                     error=str(exc),
                 )
             self._stop_event.wait(self.poll_interval)
+

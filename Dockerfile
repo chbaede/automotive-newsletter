@@ -19,8 +19,17 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY automotive_newsletter ./automotive_newsletter
 
-RUN mkdir -p /app/data
+RUN pip install --no-cache-dir -e .
+
+RUN mkdir -p /app/data \
+    && useradd -u 10001 -r -s /usr/sbin/nologin appuser \
+    && chown -R appuser:appuser /app/data /app
+
+USER appuser
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
 
 CMD ["sh", "-c", "exec gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 1 --timeout 120 --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS:-127.0.0.1,::1}\" 'automotive_newsletter.web:create_app()'"]

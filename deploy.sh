@@ -32,6 +32,7 @@ cd "${PROJECT_DIR}"
 
 # 1. Ensure data directory exists for volume mounting
 mkdir -p "${DATA_DIR}"
+chmod 777 "${DATA_DIR}" 2>/dev/null || true
 
 # 2. Pull latest changes from git
 echo ">>> Pulling latest changes from git..."

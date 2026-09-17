@@ -179,3 +179,4 @@ def test_proxy_security_defaults():
     assert settings.trusted_proxies != "*"
     assert "127.0.0.1" in settings.trusted_proxies
     assert settings.forwarded_allow_ips != "*"
+

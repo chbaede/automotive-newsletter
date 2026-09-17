@@ -92,3 +92,4 @@ def test_scheduler_timezone_awareness(tmp_path):
     scheduler = DailyScheduler(store=store, settings=settings)
     assert scheduler.tz.key == "Europe/Berlin"
     assert scheduler.settings.newsletter_timezone == "Europe/Berlin"
+

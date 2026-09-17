@@ -121,3 +121,4 @@ class StructuredLogger:
 
 # Default global logger instance
 logger = StructuredLogger()
+

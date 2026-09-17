@@ -184,12 +184,15 @@ def send_issue(issue: NewsletterIssue, settings: Settings | None = None, lang: s
     message.set_content(build_email_text(issue, lang=lang))
     message.add_alternative(build_email_html(issue, lang=lang), subtype="html")
 
-    with smtplib.SMTP(settings.smtp_host or "", settings.smtp_port, timeout=20) as smtp:
-        if settings.smtp_tls:
-            smtp.starttls()
-        if settings.smtp_user and settings.smtp_password:
-            smtp.login(settings.smtp_user, settings.smtp_password)
-        smtp.send_message(message)
+    try:
+        with smtplib.SMTP(settings.smtp_host or "", settings.smtp_port, timeout=20) as smtp:
+            if settings.smtp_tls:
+                smtp.starttls()
+            if settings.smtp_user and settings.smtp_password:
+                smtp.login(settings.smtp_user, settings.smtp_password)
+            smtp.send_message(message)
+    except (smtplib.SMTPException, OSError) as exc:
+        raise MailConfigError(f"메일 발송에 실패했습니다: {exc}") from exc
 
 
 def _email_sections(issue: NewsletterIssue, lang: str = "ko") -> list[tuple[str, str, list]]:
