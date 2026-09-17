@@ -100,80 +100,24 @@ CATEGORY_LABELS_EN = {
     "reference": "References",
 }
 
-# Canonical entity maps: canonical name -> list of aliases
-OEM_ENTITIES: dict[str, list[str]] = {
-    "Mercedes-Benz": ["mercedes-benz", "mercedes benz", "mercedes", "daimler", "메르세데스", "벤츠"],
-    "Toyota": ["toyota", "lexus", "토요타", "도요타", "렉서스"],
-    "Hyundai": ["hyundai", "genesis", "현대차", "현대자동차", "제네시스"],
-    "Kia": ["kia", "기아"],
-    "GM": ["general motors", "gm", "chevrolet", "cadillac", "제너럴 모터스", "쉐보레", "캐딜락"],
-    "Ford": ["ford", "lincoln", "포드", "링컨"],
-    "Stellantis": ["stellantis", "chrysler", "peugeot", "fiat", "jeep", "스텔란티스", "지프", "피아트"],
-    "BMW": ["bmw", "mini"],
-    "Volkswagen": ["volkswagen", "vw", "audi", "porsche", "폭스바겐", "아우디", "포르쉐"],
-    "Tesla": ["tesla", "테슬라"],
-    "BYD": ["byd", "비야디"],
-    "Honda": ["honda", "acura", "혼다", "어큐라"],
-    "Nissan": ["nissan", "infiniti", "닛산", "인피니티"],
-    "Renault": ["renault", "르노"],
-    "Rivian": ["rivian", "리비안"],
-    "Lucid": ["lucid", "lucid motors", "루시드"],
-    "Volvo": ["volvo", "polestar", "geely", "볼보", "폴스타", "지리"],
-    "Mazda": ["mazda", "마쓰다"],
-    "Subaru": ["subaru", "스바루"],
-}
+from .entity_registry import (
+    CONFERENCE_ENTITIES as REGISTRY_CONFERENCE_ENTITIES,
+    INSTITUTION_ENTITIES as REGISTRY_INSTITUTION_ENTITIES,
+    OEM_ENTITIES as REGISTRY_OEM_ENTITIES,
+    TAXONOMY_CONFERENCE_MAP,
+    TAXONOMY_INSTITUTION_MAP,
+    TAXONOMY_OEM_MAP,
+    TAXONOMY_TIER1_MAP,
+    TIER1_ENTITIES as REGISTRY_TIER1_ENTITIES,
+    contains_alias,
+    matches_ai_topic,
+)
 
-TIER1_ENTITIES: dict[str, list[str]] = {
-    "Bosch": ["bosch", "보쉬"],
-    "Continental": ["continental", "콘티넨탈"],
-    "Denso": ["denso", "덴소"],
-    "Magna": ["magna", "마그나"],
-    "ZF": ["zf", "zf friedrichshafen"],
-    "Aptiv": ["aptiv", "앱티브"],
-    "Valeo": ["valeo", "발레오"],
-    "Forvia": ["forvia", "faurecia", "포비아", "포레시아"],
-    "Hyundai Mobis": ["hyundai mobis", "mobis", "현대모비스"],
-    "CATL": ["catl"],
-    "LG Energy Solution": ["lg energy solution", "lg energy", "lg엔솔", "lg에너지솔루션"],
-    "Samsung SDI": ["samsung sdi", "삼성sdi"],
-    "SK On": ["sk on", "sk온"],
-    "Panasonic": ["panasonic", "파나소닉"],
-    "Mobileye": ["mobileye", "모빌아이"],
-    "Nvidia": ["nvidia", "엔비디아"],
-    "Qualcomm": ["qualcomm", "스냅드래곤", "snapdragon", "퀄컴"],
-    "NXP": ["nxp", "nxp semiconductors"],
-    "Renesas": ["renesas", "르네사스"],
-    "Infineon": ["infineon", "인피니언"],
-    "Schaeffler": ["schaeffler", "셰플러"],
-}
-
-INSTITUTION_ENTITIES: dict[str, list[str]] = {
-    "SAE": ["sae", "sae international", "sae wcx"],
-    "NHTSA": ["nhtsa", "도로교통안전국"],
-    "EPA": ["epa", "environmental protection agency", "미국 환경청"],
-    "ACEA": ["acea", "유럽자동차제조협회"],
-    "UNECE": ["unece"],
-    "Euro NCAP": ["euro ncap"],
-    "IIHS": ["iihs"],
-    "S&P Global Mobility": ["s&p global", "s&p global mobility", "sp global"],
-    "McKinsey": ["mckinsey", "mckinsey & company", "맥킨지"],
-    "Gartner": ["gartner", "가트너"],
-    "WardsAuto": ["wardsauto", "wards auto"],
-    "Automotive News": ["automotive news"],
-    "J.D. Power": ["j.d. power", "jd power"],
-    "Cox Automotive": ["cox automotive"],
-    "KAMA": ["한국자동차모빌리티산업협회", "kama", "자동차산업협회"],
-}
-
-CONFERENCE_ENTITIES: dict[str, list[str]] = {
-    "CES": ["ces", "ces 2025", "ces 2026"],
-    "IAA Mobility": ["iaa mobility", "iaa", "iaa 2025", "iaa 2026"],
-    "SAE WCX": ["wcx", "sae congress"],
-    "Japan Mobility Show": ["japan mobility show", "tokyo motor show"],
-    "Auto Shanghai": ["auto shanghai", "shanghai auto show", "상하이 모터쇼"],
-    "Auto China": ["auto china", "beijing auto show", "베이징 모터쇼"],
-    "Automotive World": ["automotive world", "automotive world tokyo", "automotive world nagoya"],
-}
+# Canonical entity maps: canonical name -> list of aliases (from unified entity registry)
+OEM_ENTITIES: dict[str, list[str]] = TAXONOMY_OEM_MAP
+TIER1_ENTITIES: dict[str, list[str]] = TAXONOMY_TIER1_MAP
+INSTITUTION_ENTITIES: dict[str, list[str]] = TAXONOMY_INSTITUTION_MAP
+CONFERENCE_ENTITIES: dict[str, list[str]] = TAXONOMY_CONFERENCE_MAP
 
 # Canonical name lists for summarization and tagging
 OEM_NAMES: list[str] = [
@@ -228,8 +172,8 @@ TOPIC_PATTERNS: list[tuple[str, list[str], list[str]]] = [
         "artificial intelligence", "generative ai", "genai", "large language model",
         "llm", "foundation model", "neural network", "neural networks",
         "computer vision", "machine learning", "deep learning",
-        "ai assistant", "ai agent", "ai-powered", "ai-driven",
-        "인공지능", "머신러닝", "딥러닝", "a.i.", "ai"
+        "ai assistant", "ai agent", "ai-powered", "ai-driven", "ai platform", "ai chip",
+        "인공지능", "머신러닝", "딥러닝", "a.i."
     ], []),
     ("SDV", [
         "software-defined vehicles", "software-defined vehicle", "software defined vehicles",
@@ -273,22 +217,22 @@ def extract_entities(text: str) -> list[str]:
     found: list[str] = []
 
     for name, aliases in OEM_ENTITIES.items():
-        if any(_contains_word(text, alias) for alias in aliases):
+        if any(contains_alias(text, alias, raw_text=text) for alias in aliases):
             if name not in found:
                 found.append(name)
 
     for name, aliases in TIER1_ENTITIES.items():
-        if any(_contains_word(text, alias) for alias in aliases):
+        if any(contains_alias(text, alias, raw_text=text) for alias in aliases):
             if name not in found:
                 found.append(name)
 
     for name, aliases in INSTITUTION_ENTITIES.items():
-        if any(_contains_word(text, alias) for alias in aliases):
+        if any(contains_alias(text, alias, raw_text=text) for alias in aliases):
             if name not in found:
                 found.append(name)
 
     for name, aliases in CONFERENCE_ENTITIES.items():
-        if any(_contains_word(text, alias) for alias in aliases):
+        if any(contains_alias(text, alias, raw_text=text) for alias in aliases):
             if name not in found:
                 found.append(name)
 
@@ -299,7 +243,13 @@ def extract_topics(text: str) -> list[str]:
     matched_topics: list[str] = []
     implied_topics: list[str] = []
 
+    # High-precision AI detection without substring false positives
+    if matches_ai_topic(text):
+        matched_topics.append("AI")
+
     for topic_name, patterns, implications in TOPIC_PATTERNS:
+        if topic_name == "AI":
+            continue
         if any(_contains_word(text, pat) for pat in patterns):
             if topic_name not in matched_topics:
                 matched_topics.append(topic_name)

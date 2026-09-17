@@ -876,4 +876,102 @@ def test_cli_diagnose_clustering():
     code = main(["diagnose-clustering"])
     assert code == 0
 
+    # Running with --strict flag on healthy synthetic fixture returns 0
+    code_strict = main(["diagnose-clustering", "--strict"])
+    assert code_strict == 0
+
+
+def test_disjoint_tech_partner_guard():
+    """Verify same automaker with disjoint tech partners strictly NEVER merges."""
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # BMW + Qualcomm
+    bmw_qualcomm_1 = Article(
+        title="BMW and Qualcomm collaborate on automated driving compute platform",
+        url="https://reuters.com/bmw-qualcomm",
+        source="Reuters",
+        publisher="Reuters",
+        published_at=dt,
+        entities=["BMW", "Qualcomm"],
+    )
+    bmw_qualcomm_2 = Article(
+        title="BMW selects Qualcomm Snapdragon Ride for automated driving systems",
+        url="https://autonews.com/bmw-qualcomm-2",
+        source="Automotive News",
+        publisher="Automotive News",
+        published_at=dt,
+        entities=["BMW", "Qualcomm"],
+    )
+
+    # BMW + Nvidia
+    bmw_nvidia_1 = Article(
+        title="BMW partners with Nvidia on next-generation cockpit AI assistant",
+        url="https://reuters.com/bmw-nvidia",
+        source="Reuters",
+        publisher="Reuters",
+        published_at=dt,
+        entities=["BMW", "Nvidia"],
+    )
+    bmw_nvidia_2 = Article(
+        title="BMW taps Nvidia for in-vehicle generative AI cockpit platform",
+        url="https://autonews.com/bmw-nvidia-2",
+        source="Automotive News",
+        publisher="Automotive News",
+        published_at=dt,
+        entities=["BMW", "Nvidia"],
+    )
+
+    # 1. Same partner: must cluster together
+    sim_qq = calculate_event_similarity(bmw_qualcomm_1, bmw_qualcomm_2)
+    assert sim_qq >= 0.70, f"Expected high similarity for same partner, got {sim_qq}"
+
+    sim_nn = calculate_event_similarity(bmw_nvidia_1, bmw_nvidia_2)
+    assert sim_nn >= 0.70, f"Expected high similarity for same partner, got {sim_nn}"
+
+    # 2. Disjoint partner (Qualcomm vs Nvidia): Guard D2 must reject with 0.0
+    sim_qn = calculate_event_similarity(bmw_qualcomm_1, bmw_nvidia_1)
+    assert sim_qn == 0.0, f"Disjoint partner guard failed: expected 0.0, got {sim_qn}"
+
+    sim_qn_cross = calculate_event_similarity(bmw_qualcomm_2, bmw_nvidia_2)
+    assert sim_qn_cross == 0.0, f"Disjoint partner guard failed: expected 0.0, got {sim_qn_cross}"
+
+    # 3. Full clustering: BMW+Qualcomm and BMW+Nvidia must form two completely distinct events
+    articles = [bmw_qualcomm_1, bmw_qualcomm_2, bmw_nvidia_1, bmw_nvidia_2]
+    events, event_articles, all_arts = cluster_articles(articles)
+
+    assert len(events) == 2, f"Expected 2 separate events, got {len(events)}"
+    ev_ids = {a.event_id for a in all_arts}
+    assert len(ev_ids) == 2
+
+    # Verify event membership
+    q_events = {a.event_id for a in all_arts if "qualcomm" in a.url}
+    n_events = {a.event_id for a in all_arts if "nvidia" in a.url}
+    assert q_events.isdisjoint(n_events), "Qualcomm articles and Nvidia articles were improperly merged!"
+
+
+def test_supplier_disjoint_partner_guard():
+    """Verify Mercedes with Bosch vs Continental remain separate events."""
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    mb_bosch = Article(
+        title="Mercedes-Benz teams up with Bosch on automated valet parking",
+        url="https://reuters.com/mb-bosch",
+        source="Reuters",
+        publisher="Reuters",
+        published_at=dt,
+        entities=["Mercedes-Benz", "Bosch"],
+    )
+    mb_continental = Article(
+        title="Mercedes-Benz partners with Continental on brake-by-wire system",
+        url="https://autonews.com/mb-conti",
+        source="Automotive News",
+        publisher="Automotive News",
+        published_at=dt,
+        entities=["Mercedes-Benz", "Continental"],
+    )
+
+    sim = calculate_event_similarity(mb_bosch, mb_continental)
+    assert sim == 0.0, f"Expected 0.0 for disjoint suppliers, got {sim}"
+
+
 

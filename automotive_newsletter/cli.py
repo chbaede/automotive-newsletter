@@ -36,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     diag_parser = subparsers.add_parser("diagnose-clustering", help="Diagnose event clustering quality and coherence")
     diag_parser.add_argument("--date", dest="issue_date", help="Issue date (YYYY-MM-DD), default to latest")
     diag_parser.add_argument("--db", dest="db_path", help="Path to SQLite database")
+    diag_parser.add_argument("--strict", action="store_true", help="Exit with code 1 if suspicious clusters are detected")
 
     args = parser.parse_args(argv)
     command = args.command or "serve"
@@ -130,35 +131,56 @@ def main(argv: list[str] | None = None) -> int:
         issue = store.get_issue(args.issue_date) if args.issue_date else store.latest_issue()
 
         articles = issue.articles if issue else []
-        issue_label = issue.issue_date if issue else "Synthetic Benchmark Fixture"
-
-        if not articles:
+        if articles:
+            mode_str = f"MODE: REAL DATA (Issue Date: {issue.issue_date})"
+        else:
+            mode_str = "MODE: SYNTHETIC BENCHMARK"
             from datetime import timezone
             dt = datetime.now(timezone.utc)
             articles = [
+                # Event 1: Toyota x Nvidia SDV partnership (3 articles)
                 Article(title="Toyota and Nvidia announce software-defined vehicle partnership", url="https://reuters.com/1", source="Reuters", publisher="Reuters", published_at=dt, entities=["Toyota", "Nvidia"], priority_score=88),
                 Article(title="Toyota teams up with Nvidia on SDV computing platform", url="https://autonews.com/2", source="Automotive News", publisher="Automotive News", published_at=dt, entities=["Toyota", "Nvidia"], priority_score=80),
                 Article(title="Toyota Motor Corporation and NVIDIA Expand Strategic SDV Collaboration", url="https://toyota.com/3", source="Toyota Newsroom", publisher="Toyota Newsroom", source_type="official", is_official=True, published_at=dt, entities=["Toyota", "Nvidia"], priority_score=85),
+                # Event 2: Toyota autonomous road tests (singleton)
                 Article(title="Toyota expands autonomous driving road tests in Tokyo", url="https://bloomberg.com/4", source="Bloomberg", publisher="Bloomberg", published_at=dt, entities=["Toyota"], priority_score=72),
+                # Event 3: Volkswagen manufacturing restructuring (2 articles)
                 Article(title="Volkswagen announces major European manufacturing restructuring", url="https://reuters.com/5", source="Reuters", publisher="Reuters", published_at=dt, entities=["Volkswagen"], priority_score=92),
                 Article(title="VW restructuring plans accelerate across plants", url="https://autonews.com/6", source="Automotive News", publisher="Automotive News", published_at=dt, entities=["VW"], priority_score=82),
+                # Event 4: Ford 500k truck recall (2 articles)
                 Article(title="Ford recalls 500,000 trucks over brake defect", url="https://nhtsa.gov/7", source="NHTSA", publisher="NHTSA", source_type="regulator", published_at=dt, entities=["Ford"], priority_score=95),
                 Article(title="Ford issues recall for 500,000 pickup trucks due to brake line issues", url="https://reuters.com/8", source="Reuters", publisher="Reuters", published_at=dt, entities=["Ford"], priority_score=86),
+                # Event 5: Ford 100k SUV airbag recall (separate event)
                 Article(title="Ford recalls 100,000 SUVs over airbag inflator risk", url="https://nhtsa.gov/9", source="NHTSA", publisher="NHTSA", source_type="regulator", published_at=dt, entities=["Ford"], priority_score=90),
+                # Event 6: BMW x Qualcomm automated driving partnership (2 articles)
+                Article(title="BMW and Qualcomm collaborate on automated driving compute platform", url="https://reuters.com/10", source="Reuters", publisher="Reuters", published_at=dt, entities=["BMW", "Qualcomm"], priority_score=86),
+                Article(title="BMW selects Qualcomm Snapdragon Ride for automated driving", url="https://autonews.com/11", source="Automotive News", publisher="Automotive News", published_at=dt, entities=["BMW", "Qualcomm"], priority_score=82),
+                # Event 7: BMW x Nvidia cockpit AI partnership (disjoint partner - must remain separate!)
+                Article(title="BMW partners with Nvidia on next-generation cockpit AI assistant", url="https://reuters.com/12", source="Reuters", publisher="Reuters", published_at=dt, entities=["BMW", "Nvidia"], priority_score=85),
+                Article(title="BMW taps Nvidia for in-vehicle generative AI cockpit", url="https://autonews.com/13", source="Automotive News", publisher="Automotive News", published_at=dt, entities=["BMW", "Nvidia"], priority_score=81),
+                # Event 8 & 9: Hyundai SDV vs Kia Infotainment (sibling brands - must remain separate)
+                Article(title="Hyundai Motor announces next-generation SDV architecture for 2026", url="https://reuters.com/14", source="Reuters", publisher="Reuters", published_at=dt, entities=["Hyundai"], priority_score=84),
+                Article(title="Kia reveals new software-driven infotainment experience for EV3", url="https://autonews.com/15", source="Automotive News", publisher="Automotive News", published_at=dt, entities=["Kia"], priority_score=78),
             ]
 
         events, event_articles, all_articles = cluster_articles(articles)
 
         print("=" * 80)
-        print(f"EVENT CLUSTERING DIAGNOSTIC REPORT (Issue: {issue_label})")
-        print(f"Total Articles: {len(all_articles)} | Total Events: {len(events)} | Multi-article Events: {sum(1 for e in events if e.source_count > 1)}")
+        print(f"EVENT CLUSTERING DIAGNOSTIC REPORT")
+        print(f"{mode_str}")
+        print(f"Total Articles: {len(all_articles)} | Total Events: {len(events)} | Multi-article Events: {sum(1 for e in events if e.source_count > 1)} | Singletons: {sum(1 for e in events if e.source_count == 1)}")
         print("=" * 80)
 
         suspicious_count = 0
+        multi_coherence_scores: list[float] = []
+
         for idx, event in enumerate(events, 1):
             cluster_arts = [a for a in all_articles if a.event_id == event.event_id]
             primary = next((a for a in cluster_arts if a.article_id == event.primary_article_id), cluster_arts[0])
             metrics = compute_event_coherence_metrics(cluster_arts, primary)
+
+            if len(cluster_arts) > 1:
+                multi_coherence_scores.append(metrics.avg_similarity)
 
             if metrics.is_suspicious:
                 suspicious_count += 1
@@ -176,9 +198,16 @@ def main(argv: list[str] | None = None) -> int:
                 tag = "(Primary)" if art.article_id == primary.article_id else ("(Official)" if art.is_official else "(Coverage)")
                 print(f"  * [{sim:.3f}] {tag:<10} [{art.publisher or art.source}] {art.title}")
 
+        avg_multi_coherence = sum(multi_coherence_scores) / max(1, len(multi_coherence_scores)) if multi_coherence_scores else 0.0
+
         print("\n" + "=" * 80)
         print(f"DIAGNOSTIC SUMMARY: {len(events) - suspicious_count} Healthy, {suspicious_count} Suspicious clusters.")
+        print(f"Average Multi-Article Cluster Coherence: {avg_multi_coherence:.3f}")
+        print(f"Strict Mode: {'ENABLED' if args.strict else 'DISABLED'}")
         print("=" * 80)
-        return 0 if suspicious_count == 0 else 1
+
+        if args.strict and suspicious_count > 0:
+            return 1
+        return 0
     parser.print_help()
     return 1

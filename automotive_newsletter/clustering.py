@@ -40,457 +40,21 @@ RECALL_DEFECT_TERMS = {
     "suspension": ["suspension", "ball joint", "control arm"],
 }
 
-# Canonical brand / operating legal entities
-CANONICAL_ENTITY_MAP: dict[str, str] = {
-    # Volkswagen Group
-    "volkswagen": "volkswagen",
-    "vw": "volkswagen",
-    "폭스바겐": "volkswagen",
-    "audi": "audi",
-    "아우디": "audi",
-    "porsche": "porsche",
-    "포르쉐": "porsche",
-    "skoda": "skoda",
-    "seat": "seat",
-    "cupra": "cupra",
-    "bentley": "bentley",
-    "lamborghini": "lamborghini",
-
-    # Toyota Group
-    "toyota": "toyota",
-    "토요타": "toyota",
-    "도요타": "toyota",
-    "lexus": "lexus",
-    "렉서스": "lexus",
-    "daihatsu": "daihatsu",
-
-    # Hyundai Motor Group
-    "hyundai": "hyundai",
-    "hyundai motor": "hyundai",
-    "현대": "hyundai",
-    "현대차": "hyundai",
-    "현대자동차": "hyundai",
-    "kia": "kia",
-    "기아": "kia",
-    "기아차": "kia",
-    "genesis": "genesis",
-    "제네시스": "genesis",
-    "hyundai mobis": "hyundai_mobis",
-    "mobis": "hyundai_mobis",
-    "모비스": "hyundai_mobis",
-    "현대모비스": "hyundai_mobis",
-
-    # General Motors
-    "general motors": "gm",
-    "gm": "gm",
-    "제너럴 모터스": "gm",
-    "chevrolet": "chevrolet",
-    "chevy": "chevrolet",
-    "쉐보레": "chevrolet",
-    "cadillac": "cadillac",
-    "캐딜락": "cadillac",
-    "buick": "buick",
-    "gmc": "gmc",
-
-    # Stellantis
-    "stellantis": "stellantis",
-    "스텔란티스": "stellantis",
-    "jeep": "jeep",
-    "지프": "jeep",
-    "peugeot": "peugeot",
-    "푸조": "peugeot",
-    "fiat": "fiat",
-    "피아트": "fiat",
-    "chrysler": "chrysler",
-    "크라이슬러": "chrysler",
-    "ram": "ram",
-    "dodge": "dodge",
-    "alfa romeo": "alfa_romeo",
-    "maserati": "maserati",
-    "citroen": "citroen",
-    "opel": "opel",
-
-    # Geely Holding Group
-    "volvo": "volvo",
-    "volvo cars": "volvo",
-    "볼보": "volvo",
-    "polestar": "polestar",
-    "폴스타": "polestar",
-    "geely": "geely",
-    "지리": "geely",
-    "지리자동차": "geely",
-    "zeekr": "zeekr",
-    "지커": "zeekr",
-    "lotus": "lotus",
-    "로터스": "lotus",
-
-    # BMW Group
-    "bmw": "bmw",
-    "mini": "mini",
-    "rolls-royce": "rolls_royce",
-    "rolls royce": "rolls_royce",
-
-    # Mercedes-Benz Group
-    "mercedes": "mercedes",
-    "mercedes-benz": "mercedes",
-    "mercedes benz": "mercedes",
-    "벤츠": "mercedes",
-    "메르세데스": "mercedes",
-    "daimler": "mercedes",
-
-    # Ford Motor Company
-    "ford": "ford",
-    "포드": "ford",
-    "lincoln": "lincoln",
-    "링컨": "lincoln",
-
-    # Honda Motor Company
-    "honda": "honda",
-    "혼다": "honda",
-    "acura": "acura",
-    "어큐라": "acura",
-
-    # Renault-Nissan-Mitsubishi
-    "renault": "renault",
-    "르노": "renault",
-    "nissan": "nissan",
-    "닛산": "nissan",
-    "infiniti": "infiniti",
-    "인피니티": "infiniti",
-    "mitsubishi": "mitsubishi",
-    "미쓰비시": "mitsubishi",
-    "dacia": "dacia",
-
-    # EV Specialists
-    "tesla": "tesla",
-    "테슬라": "tesla",
-    "byd": "byd",
-    "비야디": "byd",
-    "rivian": "rivian",
-    "리비안": "rivian",
-    "lucid": "lucid",
-    "루시드": "lucid",
-    "nio": "nio",
-    "xpeng": "xpeng",
-
-    # Tier 1 Suppliers
-    "bosch": "bosch",
-    "보쉬": "bosch",
-    "continental": "continental",
-    "콘티넨탈": "continental",
-    "zf": "zf",
-    "denso": "denso",
-    "덴소": "denso",
-    "magna": "magna",
-    "마그나": "magna",
-    "valeo": "valeo",
-    "발레오": "valeo",
-    "forvia": "forvia",
-    "포르비아": "forvia",
-    "aptiv": "aptiv",
-    "앱티브": "aptiv",
-
-    # Battery Manufacturers
-    "catl": "catl",
-    "lg energy solution": "lg_energy",
-    "lg energy": "lg_energy",
-    "lg엔솔": "lg_energy",
-    "lg에너지솔루션": "lg_energy",
-    "samsung sdi": "samsung_sdi",
-    "삼성sdi": "samsung_sdi",
-    "sk on": "sk_on",
-    "sk온": "sk_on",
-    "panasonic": "panasonic",
-    "파나소닉": "panasonic",
-
-    # Autonomous & Tech Partners
-    "nvidia": "nvidia",
-    "엔비디아": "nvidia",
-    "qualcomm": "qualcomm",
-    "퀄컴": "qualcomm",
-    "mobileye": "mobileye",
-    "모빌아이": "mobileye",
-    "waymo": "waymo",
-    "웨이모": "waymo",
-    "sony": "sony",
-    "소니": "sony",
-    "foxconn": "foxconn",
-    "폭스콘": "foxconn",
-    "baidu": "baidu",
-    "바이두": "baidu",
-
-    # Regulators
-    "nhtsa": "nhtsa",
-    "kba": "kba",
-    "epa": "epa",
-    "unece": "unece",
-}
+from .entity_registry import (
+    CANONICAL_ENTITY_MAP,
+    COMMON_WORD_DISAMBIGUATION,
+    OEM_ENTITIES,
+    PARENT_GROUPS,
+    TECH_SUPPLIER_ENTITIES,
+    canonical_entity,
+    contains_alias as _contains_alias,
+    extract_canonical_entities,
+    extract_parent_groups,
+    parent_group,
+)
 
 ENTITY_ALIASES = CANONICAL_ENTITY_MAP
 
-# Corporate Parent Group hierarchy (weak contextual signal)
-PARENT_GROUPS: dict[str, str] = {
-    "volkswagen": "Volkswagen Group",
-    "audi": "Volkswagen Group",
-    "porsche": "Volkswagen Group",
-    "skoda": "Volkswagen Group",
-    "seat": "Volkswagen Group",
-    "cupra": "Volkswagen Group",
-    "bentley": "Volkswagen Group",
-    "lamborghini": "Volkswagen Group",
-
-    "toyota": "Toyota Group",
-    "lexus": "Toyota Group",
-    "daihatsu": "Toyota Group",
-
-    "hyundai": "Hyundai Motor Group",
-    "kia": "Hyundai Motor Group",
-    "genesis": "Hyundai Motor Group",
-    "hyundai_mobis": "Hyundai Motor Group",
-
-    "gm": "General Motors",
-    "chevrolet": "General Motors",
-    "cadillac": "General Motors",
-    "buick": "General Motors",
-    "gmc": "General Motors",
-
-    "stellantis": "Stellantis",
-    "jeep": "Stellantis",
-    "peugeot": "Stellantis",
-    "fiat": "Stellantis",
-    "chrysler": "Stellantis",
-    "ram": "Stellantis",
-    "dodge": "Stellantis",
-    "alfa_romeo": "Stellantis",
-    "maserati": "Stellantis",
-    "citroen": "Stellantis",
-    "opel": "Stellantis",
-
-    "volvo": "Geely Holding Group",
-    "polestar": "Geely Holding Group",
-    "geely": "Geely Holding Group",
-    "zeekr": "Geely Holding Group",
-    "lotus": "Geely Holding Group",
-
-    "bmw": "BMW Group",
-    "mini": "BMW Group",
-    "rolls_royce": "BMW Group",
-
-    "mercedes": "Mercedes-Benz Group",
-
-    "ford": "Ford Motor Company",
-    "lincoln": "Ford Motor Company",
-
-    "honda": "Honda Motor Company",
-    "acura": "Honda Motor Company",
-
-    "renault": "Renault-Nissan-Mitsubishi Alliance",
-    "nissan": "Renault-Nissan-Mitsubishi Alliance",
-    "infiniti": "Renault-Nissan-Mitsubishi Alliance",
-    "mitsubishi": "Renault-Nissan-Mitsubishi Alliance",
-    "dacia": "Renault-Nissan-Mitsubishi Alliance",
-}
-
-
-OEM_ENTITIES: set[str] = {
-    "volkswagen", "audi", "porsche", "skoda", "seat", "cupra", "bentley", "lamborghini",
-    "toyota", "lexus", "daihatsu",
-    "hyundai", "kia", "genesis",
-    "gm", "chevrolet", "cadillac", "buick", "gmc",
-    "stellantis", "jeep", "peugeot", "fiat", "chrysler", "ram", "dodge", "alfa_romeo", "maserati", "citroen", "opel",
-    "volvo", "polestar", "geely", "zeekr", "lotus",
-    "bmw", "mini", "rolls_royce",
-    "mercedes",
-    "ford", "lincoln",
-    "honda", "acura",
-    "renault", "nissan", "infiniti", "mitsubishi", "dacia",
-    "tesla", "byd", "rivian", "lucid", "nio", "xpeng",
-}
-
-TECH_SUPPLIER_ENTITIES: set[str] = {
-    "bosch", "continental", "zf", "denso", "magna", "valeo", "forvia", "aptiv",
-    "catl", "lg_energy", "samsung_sdi", "sk_on", "panasonic",
-    "nvidia", "qualcomm", "mobileye", "waymo", "sony", "foxconn", "baidu", "hyundai_mobis",
-}
-
-# Context patterns for common short/ambiguous word disambiguation
-COMMON_WORD_DISAMBIGUATION: dict[str, dict[str, list[re.Pattern]]] = {
-    "seat": {
-        "negative": [
-            re.compile(r"\bseats?\s+(?:belt|belts|cushion|cushions|heater|heaters|heating|warmer|warmers|track|tracks|frame|frames|module|modules|adjustment|sensor|sensors|position|occupancy|cover|covers|massage|ventilation|failure|problem|issue)\b", re.I),
-            re.compile(r"\b(?:heated|heating|ventilated|massage|leather|power|folding|safety|child|baby|infant|bucket|front|rear|back|driver|passenger|third-row|second-row|row)\s+seats?\b", re.I),
-            re.compile(r"\b(?:driver|passenger|front|rear)\s+(?:side\s+)?seat\b", re.I),
-            re.compile(r"\bseating\b", re.I),
-        ],
-        "positive": [
-            re.compile(r"\bseat\s*(?:s\.?a\.?|cupra|martorell|ibiza|leon|ateca|arona|tarraco)\b", re.I),
-            re.compile(r"\b(?:carmaker|automaker|oem|brand)\s+seat\b", re.I),
-            re.compile(r"\bseat\s+(?:brand|carmaker|automaker|unveils|reveals|debuts|recalls|reports|launches|delivers|sales)\b", re.I),
-        ],
-    },
-    "mini": {
-        "negative": [
-            re.compile(r"\bmini(?:-|\s+)(?:excavator|van|bus|split|series|led|lidar|truck|factory|suv|size|car|market)\b", re.I),
-            re.compile(r"\bin\s+mini\b", re.I),
-        ],
-        "positive": [
-            re.compile(r"\bmini\s*(?:cooper|countryman|aceman|clubman|john cooper|electric|ev|brand|carmaker|automaker)\b", re.I),
-            re.compile(r"\b(?:bmw|carmaker|automaker|brand)\s+mini\b", re.I),
-            re.compile(r"\bmini\s+(?:unveils|reveals|debuts|launches|reports|recalls|sales)\b", re.I),
-        ],
-    },
-    "ram": {
-        "negative": [
-            re.compile(r"\b(?:\d+\s*)?(?:gb|mb|tb|ddr|ddr4|ddr5)\s+ram\b", re.I),
-            re.compile(r"\bram\s+(?:into|med|ming|s\s+into)\b", re.I),
-            re.compile(r"\b(?:hydraulic|battering)\s+ram\b", re.I),
-        ],
-        "positive": [
-            re.compile(r"\bram\s*(?:1500|2500|3500|trx|promaster|rev|pickup|truck|trucks|brand|carmaker|automaker)\b", re.I),
-            re.compile(r"\b(?:dodge|stellantis|carmaker|automaker|brand)\s+ram\b", re.I),
-            re.compile(r"\bram\s+(?:unveils|reveals|debuts|launches|recalls|sales)\b", re.I),
-        ],
-    },
-    "ford": {
-        "negative": [
-            re.compile(r"\b(?:harrison|gerald|doug|tom|betty|henry)\s+ford\b", re.I),
-            re.compile(r"\briver\s+ford\b", re.I),
-        ],
-        "positive": [
-            re.compile(r"\bford\s*(?:motor|motor\s+co|f-150|mustang|bronco|explorer|ranger|ev|evs|ceo|shares|recalls|unveils|reveals|sales|said|announced|trucks?)\b", re.I),
-            re.compile(r"\b(?:carmaker|automaker|brand)\s+ford\b", re.I),
-        ],
-    },
-    "lotus": {
-        "negative": [
-            re.compile(r"\b(?:white|blue|water|sacred)\s+lotus\b", re.I),
-            re.compile(r"\blotus\s+(?:flower|leaf|position|temple)\b", re.I),
-        ],
-        "positive": [
-            re.compile(r"\blotus\s*(?:cars|emira|eletre|evija|emeya|brand|carmaker|automaker|group)\b", re.I),
-            re.compile(r"\b(?:geely|carmaker|automaker|brand)\s+lotus\b", re.I),
-            re.compile(r"\blotus\s+(?:unveils|reveals|debuts|launches|sales)\b", re.I),
-        ],
-    },
-    "gm": {
-        "negative": [
-            re.compile(r"\b\d+\s*gm\b", re.I),
-            re.compile(r"\bgm\s+(?:foods|crops)\b", re.I),
-            re.compile(r"\b(?:plant|general)\s+gm\b", re.I),
-        ],
-        "positive": [
-            re.compile(r"\bgeneral\s+motors\b", re.I),
-            re.compile(r"\bgm\s+(?:cruise|korea|defense|motors|ev|evs|ceo|shares|stock|invests|investment|plant|plants|workers|uaw|recalls|unveils|reveals|sales|profit|earnings|said|announced|reported)\b", re.I),
-            re.compile(r"\b(?:carmaker|automaker|oem)\s+gm\b", re.I),
-        ],
-    },
-    "zf": {
-        "negative": [],
-        "positive": [
-            re.compile(r"\bzf\s*(?:friedrichshafen|group|chassis|gearbox|transmission|supplier|lifeguard|procurement|mobility)\b", re.I),
-            re.compile(r"\b(?:supplier|tier\s*1)\s+zf\b", re.I),
-            re.compile(r"\bzf\s+(?:said|announced|reported|unveiled|revealed)\b", re.I),
-        ],
-    },
-}
-
-
-def _contains_alias(text: str, alias: str, raw_text: str = "") -> bool:
-    """Helper to detect alias presence with proper word boundary, character matching, and disambiguation."""
-    if not alias:
-        return False
-    alias_lower = alias.lower()
-    if re.search(r"[^a-zA-Z0-9\s\-._]", alias):
-        has_match = alias_lower in text.lower()
-    else:
-        pattern = rf"(?<![A-Za-z0-9]){re.escape(alias_lower)}(?![A-Za-z0-9])"
-        has_match = re.search(pattern, text.lower()) is not None
-
-    if not has_match:
-        return False
-
-    # Disambiguate common/short words
-    if alias_lower in COMMON_WORD_DISAMBIGUATION:
-        rules = COMMON_WORD_DISAMBIGUATION[alias_lower]
-        combined = f"{text} {raw_text}"
-
-        # 1. If positive pattern matches, it's definitely the brand
-        if any(pat.search(combined) for pat in rules["positive"]):
-            return True
-
-        # 2. If negative pattern matches, it's NOT the brand
-        if any(pat.search(combined) for pat in rules["negative"]):
-            return False
-
-        # 3. For short 2-letter words (gm, zf) or ambiguous words (seat, mini, ram),
-        # check uppercase raw_text boundary
-        if alias_lower in {"gm", "zf", "seat", "mini", "ram", "lotus"}:
-            if raw_text and re.search(rf"\b{re.escape(alias.upper())}\b", raw_text):
-                return True
-            return False
-
-    return True
-
-
-def canonical_entity(name_or_alias: str) -> str | None:
-    """Return canonical brand/legal entity identifier for a name or alias."""
-    if not name_or_alias:
-        return None
-    cleaned = name_or_alias.strip().lower()
-    return CANONICAL_ENTITY_MAP.get(cleaned)
-
-
-def parent_group(entity_or_name: str) -> str | None:
-    """Return parent corporate group for a canonical entity or alias."""
-    if not entity_or_name:
-        return None
-    cleaned = entity_or_name.strip().lower()
-    if cleaned in PARENT_GROUPS:
-        return PARENT_GROUPS[cleaned]
-    can = CANONICAL_ENTITY_MAP.get(cleaned)
-    if can and can in PARENT_GROUPS:
-        return PARENT_GROUPS[can]
-    return None
-
-
-def extract_canonical_entities(article: Article) -> set[str]:
-    """Extract canonical brand/legal entities for event clustering and guards.
-
-    Inspects title, source, publisher, tags, and specific entity fields.
-    """
-    found: set[str] = set()
-    primary_text = f"{article.title} {article.source} {article.publisher or ''} {' '.join(article.tags)}"
-
-    sorted_aliases = sorted(CANONICAL_ENTITY_MAP.keys(), key=lambda k: len(k), reverse=True)
-    for alias in sorted_aliases:
-        if _contains_alias(primary_text, alias, raw_text=primary_text):
-            found.add(CANONICAL_ENTITY_MAP[alias])
-
-    # Fallback to article.entities if none found in title/source/tags
-    if not found and article.entities:
-        for ent in article.entities:
-            can = canonical_entity(ent)
-            if can:
-                found.add(can)
-
-    return found
-
-
-def extract_parent_groups(article: Article) -> set[str]:
-    """Extract parent corporate groups as weak contextual signals."""
-    groups: set[str] = set()
-    entities = extract_canonical_entities(article)
-    for ent in entities:
-        grp = parent_group(ent)
-        if grp:
-            groups.add(grp)
-
-    combined = f"{article.title} {article.source} {' '.join(article.entities)}".lower()
-    for grp_name in set(PARENT_GROUPS.values()):
-        if grp_name.lower() in combined:
-            groups.add(grp_name)
-
-    return groups
 
 # Multi-Tiered Event Action Themes (Strong / Medium / Weak)
 THEME_TIERS: dict[str, dict[str, list[str]]] = {
@@ -788,6 +352,14 @@ def calculate_event_similarity(
         if not has_strong_joint_signal:
             return 0.0
 
+    # Guard D2: Disjoint Tech / Supplier Partner Guard
+    # Same or different automakers partnering with distinct tech/supplier partners
+    # (e.g. BMW x Qualcomm vs BMW x Nvidia) must NEVER merge.
+    tech1 = c1 & TECH_SUPPLIER_ENTITIES
+    tech2 = c2 & TECH_SUPPLIER_ENTITIES
+    if tech1 and tech2 and tech1.isdisjoint(tech2):
+        return 0.0
+
     # Guard E: Numeric identifiers discrepancy (e.g. update 0 vs update 1, 500,000 vs 100,000)
     nums1 = set(re.findall(r"\b\d+\b", a1.title))
     nums2 = set(re.findall(r"\b\d+\b", a2.title))
@@ -818,7 +390,12 @@ def calculate_event_similarity(
             score = 0.68 + 0.24 * lex + num_bonus + model_bonus + multi_entity_bonus + topic_bonus
             return round(min(0.99, max(0.60, score)), 3)
     elif has_company_overlap:
-        # If one article has an explicit action theme and the other does not:
+        # Multi-entity articles (sharing >= 2 specific entities, e.g. OEM + Tech partner)
+        # with strong lexical/token overlap:
+        if len(c1 & c2) >= 2 and (containment >= 0.40 or len(inter) >= 3):
+            score = 0.65 + 0.25 * lex + num_bonus + model_bonus + multi_entity_bonus + topic_bonus
+            return round(min(0.99, max(0.65, score)), 3)
+        # If one article has an explicit action theme and the other does not (single company):
         if bool(themes1 ^ themes2):
             score = 0.35 + 0.30 * lex + num_bonus + model_bonus + topic_bonus
             return round(min(0.55, max(0.35, score)), 3)

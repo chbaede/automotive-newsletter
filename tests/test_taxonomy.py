@@ -243,3 +243,78 @@ def test_automotive_software_ecosystem_and_virtualization_taxonomy():
     assert "Automotive Cybersecurity" in t_sec
     assert "SDV" in t_sec
 
+
+def test_bare_ai_regression_and_compound_phrases():
+    """Verify bare 'ai' inside common words is never classified as AI topic."""
+    # Words with 'ai' substring that MUST NOT trigger AI topic
+    false_positives = [
+        "The spokesperson said the plant will resume operations",
+        "Deliveries will resume again next month",
+        "Daily maintenance inspection on assembly line",
+        "The model is available in Europe and North America",
+        "Brake failure caused emergency stop",
+        "Engineers train workers on the new production line",
+        "Daimler Truck reports quarterly commercial vehicle sales",
+        "Automaker expands distribution network across Asia",
+    ]
+    for text in false_positives:
+        topics = extract_topics(text)
+        assert "AI" not in topics, f"False positive 'AI' detected in: '{text}' (topics: {topics})"
+
+    # Legitimate AI expressions that MUST trigger AI topic
+    true_positives = [
+        "The vehicle uses AI for path planning and perception",
+        "Next-generation A.I. platform deployed in vehicle",
+        "AI-powered infotainment system with voice assistant",
+        "AI-driven automated driving system",
+        "Automotive AI chip announced for central compute",
+        "In-vehicle AI agent assists driver with navigation",
+        "Hyundai develops generative AI cockpit assistant",
+        "자율주행을 위한 인공지능 기반 딥러닝 비전 솔루션",
+    ]
+    for text in true_positives:
+        topics = extract_topics(text)
+        assert "AI" in topics, f"Expected 'AI' topic in: '{text}' (topics: {topics})"
+
+
+def test_canonical_brand_extraction_not_parent_groups():
+    """Verify taxonomy entity extraction returns canonical brand/entity, not parent corporate groups."""
+    e_audi = extract_entities("Audi unveils new electric luxury sedan in Ingolstadt")
+    assert "Audi" in e_audi
+    assert "Volkswagen" not in e_audi
+
+    e_genesis = extract_entities("Genesis introduces flagship GV90 luxury electric SUV")
+    assert "Genesis" in e_genesis
+    assert "Hyundai" not in e_genesis
+
+    e_mini = extract_entities("Mini Cooper EV debuts with circular OLED display")
+    assert "Mini" in e_mini
+    assert "BMW" not in e_mini
+
+    e_jeep = extract_entities("Jeep expands plug-in hybrid 4xe lineup across North America")
+    assert "Jeep" in e_jeep
+    assert "Stellantis" not in e_jeep
+
+    e_kia = extract_entities("Kia launches high-performance EV6 GT with 576 horsepower")
+    assert "Kia" in e_kia
+    assert "Hyundai" not in e_kia
+
+
+def test_taxonomy_common_word_disambiguation():
+    """Verify common ambiguous words (seat, mini, ram) are properly disambiguated in taxonomy."""
+    # "seat"
+    e_seat_neg = extract_entities("The driver adjusted the heated seat and seatbelt before driving")
+    assert "SEAT" not in e_seat_neg
+
+    e_seat_pos = extract_entities("Automaker SEAT announces future electrification strategy in Martorell")
+    assert "SEAT" in e_seat_pos
+
+    # "mini"
+    e_mini_neg = extract_entities("A mini excavator was used during factory maintenance")
+    assert "Mini" not in e_mini_neg
+
+    e_mini_pos = extract_entities("BMW Mini Cooper begins production at Oxford plant")
+    assert "Mini" in e_mini_pos
+    assert "BMW" in e_mini_pos
+
+
