@@ -10,12 +10,23 @@ from automotive_newsletter.collector import (
 )
 from automotive_newsletter.models import Article, FeedEntry
 from automotive_newsletter.sources import (
+    ALL_SOURCES,
+    AGGREGATOR_SOURCES,
     AUTHORITY_HIERARCHY,
     DEFAULT_FEEDS,
+    INSTITUTION_SOURCES,
+    MEDIA_SOURCES,
+    PRIMARY_SOURCES,
     SourceFeed,
+    check_catalog_integrity,
     classify_source_type,
+    get_aggregator_sources,
     get_enabled_sources,
+    get_institution_sources,
+    get_media_sources,
+    get_primary_sources,
     get_source,
+    get_sources_by_group,
     source_authority,
     source_metadata,
 )
@@ -31,9 +42,11 @@ def test_source_feed_metadata_and_hierarchy():
         assert feed.source_type in AUTHORITY_HIERARCHY
         assert 0 <= feed.authority_score <= 100
         assert feed.region in {"global", "us", "europe", "asia", "kr"}
-        assert feed.language in {"en", "ko"}
+        assert feed.language in {"en", "ko", "de"}
         assert isinstance(feed.paywalled, bool)
         assert isinstance(feed.enabled, bool)
+        assert feed.catalog_group in {"primary", "media", "institution", "aggregator"}
+        assert feed.discovery_method in {"rss", "atom", "search", "manual_web"}
 
     # Authority hierarchy values
     assert AUTHORITY_HIERARCHY["regulator"] == 100
@@ -50,9 +63,12 @@ def test_source_feed_metadata_and_hierarchy():
     meta = source_metadata("automotive_news")
     assert meta is not None
     assert meta["id"] == "automotive_news"
+    assert meta["source_id"] == "automotive_news"
     assert meta["name"] == "Automotive News"
     assert meta["authority_score"] == 90
     assert meta["source_type"] == "media"
+    assert meta["catalog_group"] == "media"
+    assert meta["discovery_method"] == "rss"
     assert meta["enabled"] is True
 
     assert source_metadata("non_existent_source") is None
@@ -518,5 +534,166 @@ def test_collector_diagnostics_format():
     finally:
         collector_module._feed_client = old_client
         feedparser.parse = old_parse
+
+
+def test_catalog_integrity_and_priority_coverage():
+    # 1. Overall integrity of ALL_SOURCES
+    errors = check_catalog_integrity()
+    assert errors == [], f"Catalog integrity issues: {errors}"
+
+    # 2. Priority sources specified in requirements
+    priority_ids = [
+        # GLOBAL / BUSINESS
+        "reuters",
+        "bloomberg",
+        # AUTOMOTIVE MEDIA
+        "automotive_news",
+        "automotive_news_europe",
+        "automotive_world",
+        "wardsauto",
+        "just_auto",
+        "automotive_dive",
+        # GERMANY / EUROPE
+        "heise_autos",
+        "electrive_en",
+        "electrive_de",
+        # EUROPEAN INDUSTRY
+        "acea",
+        "european_commission",
+        # REGULATION / SAFETY
+        "unece",
+        "nhtsa",
+        "euro_ncap",
+        # AUTOMOTIVE SOFTWARE / SDV
+        "eclipse_sdv",
+        "eclipse_score",
+        "covesa",
+        "autosar",
+        # SUPPLY CHAIN
+        "automotive_logistics",
+        # OFFICIAL OEM / TIER 1
+        "mercedes_benz",
+        "volkswagen",
+        "bmw",
+        "stellantis",
+        "renault",
+        "toyota",
+        "hyundai",
+        "kia",
+        "bosch",
+        "continental",
+        "zf",
+        "valeo",
+        "magna",
+        "aptiv",
+        "forvia",
+        "hyundai_mobis",
+    ]
+
+    for sid in priority_ids:
+        source = get_source(sid)
+        assert source is not None, f"Source '{sid}' must be registered and retrievable via get_source"
+        # Validate all required fields
+        assert source.id, f"source_id required for {sid}"
+        assert source.source_id == source.id
+        assert source.name, f"name required for {sid}"
+        assert source.url, f"url required for {sid}"
+        assert source.source_type, f"source_type required for {sid}"
+        assert 0 <= source.authority_score <= 100, f"authority_score required for {sid}"
+        assert source.region in {"global", "us", "europe", "asia", "kr"}, f"region required for {sid}"
+        assert source.language in {"en", "ko", "de"}, f"language required for {sid}"
+        assert source.bucket in {
+            "big", "oem", "tier1", "sdv", "ev_battery", "adas_autonomous",
+            "regulation", "market", "manufacturing", "supply_chain",
+            "cybersecurity", "software", "conference", "institution", "reference",
+        }, f"valid bucket required for {sid}"
+        assert isinstance(source.enabled, bool)
+        assert source.catalog_group in {"primary", "media", "institution", "aggregator"}
+        assert source.discovery_method in {"rss", "atom", "search", "manual_web"}
+
+
+def test_catalog_groups_and_helpers():
+    # Catalog group helpers
+    primary = get_primary_sources()
+    media = get_media_sources()
+    institutions = get_institution_sources()
+    aggregators = get_aggregator_sources()
+
+    assert len(primary) == len(PRIMARY_SOURCES)
+    assert len(media) == len(MEDIA_SOURCES)
+    assert len(institutions) == len(INSTITUTION_SOURCES)
+    assert len(aggregators) == len(AGGREGATOR_SOURCES)
+
+    assert len(ALL_SOURCES) == len(primary) + len(media) + len(institutions) + len(aggregators)
+
+    # get_sources_by_group
+    assert get_sources_by_group("primary") == PRIMARY_SOURCES
+    assert get_sources_by_group("media") == MEDIA_SOURCES
+    assert get_sources_by_group("institution") == INSTITUTION_SOURCES
+    assert get_sources_by_group("aggregator") == AGGREGATOR_SOURCES
+
+    # Aliases work seamlessly
+    assert get_source("unece_wp29") is not None
+    assert get_source("unece_wp29").id == "unece"
+    assert get_source("volkswagen_group") is not None
+    assert get_source("volkswagen_group").id == "volkswagen"
+    assert get_source("electrive") is not None
+    assert get_source("electrive").id == "electrive_en"
+    assert get_source("bmw_group") is not None
+    assert get_source("bmw_group").id == "bmw"
+    assert get_source("eclipse_s_core") is not None
+    assert get_source("eclipse_s_core").id == "eclipse_score"
+
+
+def test_source_classification_extended_entities():
+    # Extended open source
+    assert classify_source_type("COVESA Alliance") == "open_source"
+    assert classify_source_type("Eclipse S-CORE project") == "open_source"
+    assert classify_source_type("AUTOSAR Development") == "open_source"
+
+    # Extended official
+    assert classify_source_type("Forvia Press Room") == "official"
+    assert classify_source_type("Hyundai Mobis Media") == "official"
+
+    # Extended regulator
+    assert classify_source_type("European Commission Directorate") == "regulator"
+
+
+def test_health_check_manual_web_and_metadata():
+    manual_feed = SourceFeed(
+        name="Official OEM Landing Page",
+        bucket="oem",
+        url="https://example.com/press",
+        id="oem_landing",
+        source_type="official",
+        authority_score=70,
+        catalog_group="primary",
+        discovery_method="manual_web",
+    )
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc, tb): return None
+        def get(self, url):
+            class FakeResponse:
+                status_code = 200
+                content = b"<html>Landing page</html>"
+                def raise_for_status(self): pass
+            return FakeResponse()
+
+    import automotive_newsletter.collector as collector_module
+    old_client = collector_module._feed_client
+    try:
+        collector_module._feed_client = FakeClient
+        rows = check_feed_health(feeds=[manual_feed])
+        assert len(rows) == 1
+        assert rows[0]["ok"] is True
+        assert rows[0]["catalog_group"] == "primary"
+        assert rows[0]["discovery_method"] == "manual_web"
+        assert rows[0]["diagnostic"] == "OK  Official OEM Landing Page"
+    finally:
+        collector_module._feed_client = old_client
+
 
 

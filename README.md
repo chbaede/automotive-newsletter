@@ -56,43 +56,121 @@ REQUEST_TIMEOUT_SECONDS=8
 
 ## 소스 및 피드 아키텍처 (Source & Feed Architecture)
 
-피드 수집기는 명확한 메타데이터와 신뢰도(Authority) 계층을 기반으로 소스를 관리합니다.
+피드 수집기는 체계적인 메타데이터와 신뢰도(Authority) 계층을 기반으로 고품질 자동차 소스 카탈로그를 관리합니다.
 
 ### 1. SourceFeed 메타데이터
-각 피드는 단순 URL을 넘어 다음 메타데이터를 보유합니다:
-- `id`: 고유 식별자 슬러그 (예: `reuters`, `automotive_news`, `wardsauto`, `acea`, `unece`, `eclipse_sdv`)
+각 소스는 단순 피드 주소를 넘어 표준화된 메타데이터를 보유합니다:
+- `id` / `source_id`: 고유 식별자 슬러그 (예: `reuters`, `automotive_news`, `unece`, `heise_autos`, `bosch`)
 - `name`: 소스 표시명
-- `bucket`: 기본 카테고리 (`big`, `oem`, `tier1`, `sdv`, `institution`, `conference`)
-- `url`: RSS/Atom 피드 주소
+- `bucket`: 기본 카테고리 (`big`, `oem`, `tier1`, `sdv`, `ev_battery`, `regulation`, `software`, `supply_chain`, `institution`, `conference` 등)
+- `url`: 수집 URL (RSS/Atom 피드 또는 타깃 검색 피드 주소)
 - `source_type`: 소스 분류 (`media`, `official`, `institution`, `regulator`, `research`, `open_source`, `aggregator`, `press_release`, `event`)
-- `authority_score`: 0~100 사이의 출처 특성/원천 신뢰도 점수
+- `authority_score`: 0~100 사이의 출처 신뢰도/원천 취재력 점수
 - `region`: 관할 지역 (`global`, `us`, `europe`, `asia`, `kr`)
-- `language`: 기본 언어 (`en`, `ko`)
+- `language`: 기본 언어 (`en`, `ko`, `de`)
 - `paywalled`: 유료 구독 여부
-- `enabled`: 활성화 여부 (`get_enabled_sources()`로 필터링)
+- `enabled`: 활성화 여부
+- `catalog_group`: 카탈로그 그룹 (`primary`, `media`, `institution`, `aggregator`)
+- `discovery_method`: 수집 및 발견 방식 (`rss`, `atom`, `search`, `manual_web`)
 
 ### 2. 신뢰도(Authority) 계층
-신뢰도 점수는 기사의 '진실성'이 아니라 언론사/원천 출처의 취재력과 공식성을 평가하는 휴리스틱 지표입니다:
-- **100**: 규제/정부/공식 표준 기구 (`regulator`: NHTSA, Euro NCAP, UNECE, ACEA)
+신뢰도 점수는 사실 여부 판정이 아닌 출처의 공식성과 1차 취재력을 평가하는 휴리스틱 지표입니다:
+- **100**: 규제/정부/공식 표준 기구 (`regulator`: NHTSA, Euro NCAP, UNECE, European Commission, ACEA)
 - **95**: 주요 독립 통신사/와이어 (`news_agency`: Reuters, Bloomberg, AP)
-- **90**: 정통 자동차 B2B 전문지 (`industry_media`: Automotive News, Automotive World, WardsAuto, JustAuto, Automotive Dive)
-- **85**: 특화 기술/모빌리티 매체 (`specialist_media` / `open_source`: ATTI, Electrek, InsideEVs, The Drive, Eclipse SDV)
+- **90**: 정통 자동차 B2B 전문지 (`industry_media`: Automotive News, Automotive World, WardsAuto, JustAuto, Automotive Dive, Automotive Logistics)
+- **85**: 특화 기술 매체 및 오픈소스 표준 (`specialist_media` / `open_source`: Heise Autos, electrive, ATTI, Electrek, InsideEVs, The Drive, Eclipse SDV, Eclipse S-CORE, COVESA, AUTOSAR)
 - **80**: 주요 분석/연구 기관 (`research` / `institution`: S&P Global Mobility, McKinsey, Gartner, SAE)
 - **75**: 일반 테크/모빌리티 미디어 (`tech_media`: TechCrunch, The Verge)
-- **70**: 완성차 및 부품사 공식 뉴스룸 / 행사 (`official`, `event`: OEM/Tier 1 뉴스룸)
+- **70**: 완성차(OEM) 및 부품사(Tier 1) 공식 뉴스룸 (`official`: Mercedes, VW, BMW, Bosch, ZF, Hyundai, Kia, Mobis 등)
 - **60**: 보도자료 배포망 (`press_release`: PR Newswire)
-- **40**: 검색/수집 어그리게이터 (`aggregator`: Google News 검색 피드)
+- **40**: 검색/수집 어그리게이터 (`aggregator`: Google News 검색 토픽 피드)
 
-### 3. 발견 출처(Discovery)와 실제 발행사(Publisher) 분리
-Google News와 같은 어그리게이터 피드에서 수집된 기사는 `Google News`가 발행처로 표기되지 않고, 피드 내 메타데이터 및 헤드라인에서 실제 취재 언론사를 자동 추출합니다:
-- `discovered_via`: `"Google News"` (발견 경로)
-- `publisher`: `"Reuters"` (실제 발행사)
-- `source`: `"Reuters"` (기사 표시 출처)
+---
 
-### 4. 소스 헬퍼 함수
+### 3. 소스 카탈로그 (Source Catalog)
+
+카탈로그는 4가지 명확한 그룹으로 구분되어 관리됩니다:
+
+#### 1) PRIMARY SOURCES (공식 뉴스룸, 규제 기관, 표준 기구)
+| Source ID | Source Name | Type | Group | Authority | Region | Lang | Discovery Method |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
+| `unece` | UNECE WP.29 Vehicle Regulations | `regulator` | Primary | 100 | global | en | search |
+| `nhtsa` | NHTSA | `regulator` | Primary | 100 | us | en | search |
+| `euro_ncap` | Euro NCAP | `regulator` | Primary | 100 | europe | en | search |
+| `autosar` | AUTOSAR Development Partnership | `open_source` | Primary | 85 | global | en | search |
+| `eclipse_sdv` | Eclipse SDV | `open_source` | Primary | 85 | global | en | search |
+| `eclipse_score`| Eclipse S-CORE | `open_source` | Primary | 85 | global | en | search |
+| `covesa` | COVESA Alliance | `open_source` | Primary | 85 | global | en | search |
+| `mercedes_benz` | Mercedes-Benz Group Media | `official` | Primary | 70 | europe | en | search |
+| `volkswagen` | Volkswagen Group Newsroom | `official` | Primary | 70 | europe | en | search |
+| `bmw` | BMW Group PressClub | `official` | Primary | 70 | europe | en | search |
+| `stellantis` | Stellantis Media | `official` | Primary | 70 | europe | en | search |
+| `renault` | Renault Group Newsroom | `official` | Primary | 70 | europe | en | search |
+| `toyota` | Toyota Motor Newsroom | `official` | Primary | 70 | global | en | search |
+| `hyundai` | Hyundai Motor Newsroom | `official` | Primary | 70 | kr | en | search |
+| `kia` | Kia Worldwide Media | `official` | Primary | 70 | kr | en | search |
+| `bosch` | Bosch Media Service | `official` | Primary | 70 | europe | en | search |
+| `continental` | Continental Press | `official` | Primary | 70 | europe | en | search |
+| `zf` | ZF Group Press | `official` | Primary | 70 | europe | en | search |
+| `valeo` | Valeo Media | `official` | Primary | 70 | europe | en | search |
+| `magna` | Magna International News | `official` | Primary | 70 | global | en | search |
+| `aptiv` | Aptiv Media | `official` | Primary | 70 | global | en | search |
+| `forvia` | Forvia Newsroom | `official` | Primary | 70 | europe | en | search |
+| `hyundai_mobis`| Hyundai Mobis Newsroom | `official` | Primary | 70 | kr | en | search |
+
+#### 2) MEDIA (글로벌 와이어, 전문지, 독일/유럽 매체, 공급망)
+| Source ID | Source Name | Type | Group | Authority | Region | Lang | Discovery Method |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
+| `reuters` | Reuters Automotive | `media` | Media | 95 | global | en | search |
+| `bloomberg` | Bloomberg Hyperdrive | `media` | Media | 95 | global | en | search |
+| `automotive_news` | Automotive News | `media` | Media | 90 | global | en | rss |
+| `automotive_news_europe` | Automotive News Europe | `media` | Media | 90 | europe | en | rss |
+| `automotive_world` | Automotive World | `media` | Media | 90 | global | en | rss |
+| `wardsauto` | WardsAuto | `media` | Media | 90 | us | en | rss |
+| `just_auto` | JustAuto | `media` | Media | 90 | global | en | rss |
+| `automotive_dive` | Automotive Dive | `media` | Media | 90 | us | en | rss |
+| `heise_autos` | Heise Autos | `media` | Media | 85 | europe | de | atom |
+| `electrive_en` | electrive (EN) | `media` | Media | 85 | europe | en | rss |
+| `electrive_de` | electrive (DE) | `media` | Media | 85 | europe | de | rss |
+| `automotive_logistics` | Automotive Logistics | `media` | Media | 90 | global | en | search |
+| `insideevs` | InsideEVs | `media` | Media | 85 | global | en | rss |
+| `car_and_driver` | Car and Driver News | `media` | Media | 85 | us | en | rss |
+| `motor1` | Motor1 News | `media` | Media | 85 | global | en | rss |
+| `the_drive` | The Drive | `media` | Media | 85 | us | en | rss |
+| `electrek` | Electrek | `media` | Media | 85 | global | en | rss |
+| `techcrunch_transportation` | TechCrunch Transportation | `media` | Media | 75 | global | en | rss |
+| `the_verge_transportation` | The Verge Transportation | `media` | Media | 75 | global | en | rss |
+| `atti` | ATTI | `media` | Media | 85 | global | en | rss |
+| `pr_newswire_automotive` | PR Newswire Automotive | `press_release`| Media | 60 | global | en | rss |
+
+#### 3) INSTITUTIONS (산업 협회, 분석 기관, 컨퍼런스)
+| Source ID | Source Name | Type | Group | Authority | Region | Lang | Discovery Method |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
+| `acea` | ACEA (European Automobile Manufacturers’ Association) | `institution` | Institution | 100 | europe | en | search |
+| `european_commission` | European Commission Automotive & Mobility | `regulator` | Institution | 100 | europe | en | search |
+| `institutions_and_magazines` | Institutions and magazines | `aggregator` | Institution | 40 | global | en | search |
+| `automotive_conferences` | Automotive conferences | `event` | Institution | 70 | global | en | search |
+
+#### 4) AGGREGATORS (토픽 검색 어그리게이터)
+| Source ID | Source Name | Type | Group | Authority | Region | Lang | Discovery Method |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
+| `global_automotive_big_news` | Global automotive big news | `aggregator` | Aggregator | 40 | global | en | search |
+| `korea_auto_news` | Korea Auto News | `aggregator` | Aggregator | 40 | kr | ko | search |
+| `oem_strategy` | OEM strategy | `aggregator` | Aggregator | 40 | global | en | search |
+| `tier1_suppliers` | Tier 1 suppliers | `aggregator` | Aggregator | 40 | global | en | search |
+| `sdv_software` | SDV software | `aggregator` | Aggregator | 40 | global | en | search |
+| `regulators_and_safety` | Regulators and safety | `aggregator` | Aggregator | 40 | global | en | search |
+
+---
+
+### 4. 소스 헬퍼 및 무결성 검증 함수
 `automotive_newsletter.sources` 모듈에서 다음과 같은 헬퍼 함수를 제공합니다:
-- `get_source(source_id)`: ID 또는 이름으로 `SourceFeed` 조회
-- `get_enabled_sources()`: 활성화된(`enabled=True`) 피드 목록 반환
+- `get_source(source_id)`: ID, 별칭(aliases), 또는 이름으로 `SourceFeed` 조회
+- `get_enabled_sources(group=None)`: 활성화된(`enabled=True`) 피드 목록 반환 (그룹 필터 지원)
+- `get_primary_sources()`, `get_media_sources()`, `get_institution_sources()`, `get_aggregator_sources()`: 그룹별 소스 목록 반환
+- `get_sources_by_group(group)`: 특정 카탈로그 그룹의 소스 목록 반환
 - `source_metadata(source_id)`: 소스 메타데이터 딕셔너리 반환
 - `source_authority(source_id)`: 소스 ID, 언론사명, 또는 소스 타입에 따른 권위 점수 반환
+- `check_catalog_integrity()`: 전체 카탈로그 스키마 및 고유성 검증
+
 

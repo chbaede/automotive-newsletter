@@ -742,6 +742,8 @@ def check_feed_health(
                 "source_type": feed.source_type,
                 "authority_score": feed.authority_score,
                 "enabled": feed.enabled,
+                "catalog_group": getattr(feed, "catalog_group", "media"),
+                "discovery_method": getattr(feed, "discovery_method", "rss"),
                 "ok": False,
                 "status_code": None,
                 "entries": 0,
@@ -756,19 +758,29 @@ def check_feed_health(
                     client=client,
                     insecure_client=insecure_client,
                 )
-                parsed = feedparser.parse(response.content)
-                entries = len(parsed.entries)
-                parse_failed = bool(getattr(parsed, "bozo", False) and not parsed.entries)
-                result.update(
-                    {
-                        "ok": response.status_code < 400 and not parse_failed,
-                        "status_code": response.status_code,
-                        "entries": entries,
-                        "tls_fallback": used_tls_fallback,
-                    }
-                )
-                if parse_failed:
-                    result["error"] = "피드 파싱 실패"
+                if getattr(feed, "discovery_method", "rss") == "manual_web":
+                    result.update(
+                        {
+                            "ok": response.status_code < 400,
+                            "status_code": response.status_code,
+                            "entries": 0,
+                            "tls_fallback": used_tls_fallback,
+                        }
+                    )
+                else:
+                    parsed = feedparser.parse(response.content)
+                    entries = len(parsed.entries)
+                    parse_failed = bool(getattr(parsed, "bozo", False) and not parsed.entries)
+                    result.update(
+                        {
+                            "ok": response.status_code < 400 and not parse_failed,
+                            "status_code": response.status_code,
+                            "entries": entries,
+                            "tls_fallback": used_tls_fallback,
+                        }
+                    )
+                    if parse_failed:
+                        result["error"] = "피드 파싱 실패"
             except Exception as exc:
                 result["error"] = str(exc)
 
