@@ -37,57 +37,311 @@ RECALL_DEFECT_TERMS = {
     "suspension": ["suspension", "ball joint", "control arm"],
 }
 
-# Automotive entity aliases (canonical mapping)
-ENTITY_ALIASES = {
-    "vw": "volkswagen",
+# Canonical brand / operating legal entities
+CANONICAL_ENTITY_MAP: dict[str, str] = {
+    # Volkswagen Group
     "volkswagen": "volkswagen",
-    "audi": "volkswagen",
-    "porsche": "volkswagen",
+    "vw": "volkswagen",
+    "폭스바겐": "volkswagen",
+    "audi": "audi",
+    "아우디": "audi",
+    "porsche": "porsche",
+    "포르쉐": "porsche",
+    "skoda": "skoda",
+    "seat": "seat",
+    "cupra": "cupra",
+    "bentley": "bentley",
+    "lamborghini": "lamborghini",
+
+    # Toyota Group
     "toyota": "toyota",
-    "lexus": "toyota",
+    "토요타": "toyota",
+    "도요타": "toyota",
+    "lexus": "lexus",
+    "렉서스": "lexus",
+    "daihatsu": "daihatsu",
+
+    # Hyundai Motor Group
     "hyundai": "hyundai",
+    "hyundai motor": "hyundai",
+    "현대": "hyundai",
+    "현대차": "hyundai",
+    "현대자동차": "hyundai",
     "kia": "kia",
+    "기아": "kia",
+    "기아차": "kia",
     "genesis": "genesis",
-    "ford": "ford",
-    "gm": "gm",
+    "제네시스": "genesis",
+    "hyundai mobis": "hyundai_mobis",
+    "mobis": "hyundai_mobis",
+    "모비스": "hyundai_mobis",
+    "현대모비스": "hyundai_mobis",
+
+    # General Motors
     "general motors": "gm",
-    "chevrolet": "gm",
-    "cadillac": "gm",
-    "tesla": "tesla",
+    "gm": "gm",
+    "제너럴 모터스": "gm",
+    "chevrolet": "chevrolet",
+    "chevy": "chevrolet",
+    "쉐보레": "chevrolet",
+    "cadillac": "cadillac",
+    "캐딜락": "cadillac",
+    "buick": "buick",
+    "gmc": "gmc",
+
+    # Stellantis
     "stellantis": "stellantis",
-    "jeep": "stellantis",
-    "peugeot": "stellantis",
-    "fiat": "stellantis",
-    "byd": "byd",
+    "스텔란티스": "stellantis",
+    "jeep": "jeep",
+    "지프": "jeep",
+    "peugeot": "peugeot",
+    "푸조": "peugeot",
+    "fiat": "fiat",
+    "피아트": "fiat",
+    "chrysler": "chrysler",
+    "크라이슬러": "chrysler",
+    "ram": "ram",
+    "dodge": "dodge",
+    "alfa romeo": "alfa_romeo",
+    "maserati": "maserati",
+    "citroen": "citroen",
+    "opel": "opel",
+
+    # Geely Holding Group
+    "volvo": "volvo",
+    "volvo cars": "volvo",
+    "볼보": "volvo",
+    "polestar": "polestar",
+    "폴스타": "polestar",
+    "geely": "geely",
+    "지리": "geely",
+    "지리자동차": "geely",
+    "zeekr": "zeekr",
+    "지커": "zeekr",
+    "lotus": "lotus",
+    "로터스": "lotus",
+
+    # BMW Group
     "bmw": "bmw",
+    "mini": "mini",
+    "rolls-royce": "rolls_royce",
+    "rolls royce": "rolls_royce",
+
+    # Mercedes-Benz Group
     "mercedes": "mercedes",
     "mercedes-benz": "mercedes",
+    "mercedes benz": "mercedes",
+    "벤츠": "mercedes",
+    "메르세데스": "mercedes",
     "daimler": "mercedes",
-    "renault": "renault",
-    "nissan": "nissan",
+
+    # Ford Motor Company
+    "ford": "ford",
+    "포드": "ford",
+    "lincoln": "lincoln",
+    "링컨": "lincoln",
+
+    # Honda Motor Company
     "honda": "honda",
-    "volvo": "volvo",
-    "geely": "geely",
+    "혼다": "honda",
+    "acura": "acura",
+    "어큐라": "acura",
+
+    # Renault-Nissan-Mitsubishi
+    "renault": "renault",
+    "르노": "renault",
+    "nissan": "nissan",
+    "닛산": "nissan",
+    "infiniti": "infiniti",
+    "인피니티": "infiniti",
+    "mitsubishi": "mitsubishi",
+    "미쓰비시": "mitsubishi",
+    "dacia": "dacia",
+
+    # EV Specialists
+    "tesla": "tesla",
+    "테슬라": "tesla",
+    "byd": "byd",
+    "비야디": "byd",
     "rivian": "rivian",
+    "리비안": "rivian",
     "lucid": "lucid",
+    "루시드": "lucid",
+    "nio": "nio",
+    "xpeng": "xpeng",
+
+    # Tier 1 Suppliers
     "bosch": "bosch",
+    "보쉬": "bosch",
     "continental": "continental",
+    "콘티넨탈": "continental",
     "zf": "zf",
     "denso": "denso",
+    "덴소": "denso",
     "magna": "magna",
+    "마그나": "magna",
     "valeo": "valeo",
+    "발레오": "valeo",
     "forvia": "forvia",
+    "포르비아": "forvia",
     "aptiv": "aptiv",
+    "앱티브": "aptiv",
+
+    # Battery Manufacturers
     "catl": "catl",
-    "lg energy solution": "lg energy",
-    "lg energy": "lg energy",
-    "samsung sdi": "samsung sdi",
-    "sk on": "sk on",
+    "lg energy solution": "lg_energy",
+    "lg energy": "lg_energy",
+    "lg엔솔": "lg_energy",
+    "lg에너지솔루션": "lg_energy",
+    "samsung sdi": "samsung_sdi",
+    "삼성sdi": "samsung_sdi",
+    "sk on": "sk_on",
+    "sk온": "sk_on",
     "panasonic": "panasonic",
+    "파나소닉": "panasonic",
+
+    # Regulators
     "nhtsa": "nhtsa",
     "kba": "kba",
     "epa": "epa",
+    "unece": "unece",
 }
+
+ENTITY_ALIASES = CANONICAL_ENTITY_MAP
+
+# Corporate Parent Group hierarchy (weak contextual signal)
+PARENT_GROUPS: dict[str, str] = {
+    "volkswagen": "Volkswagen Group",
+    "audi": "Volkswagen Group",
+    "porsche": "Volkswagen Group",
+    "skoda": "Volkswagen Group",
+    "seat": "Volkswagen Group",
+    "cupra": "Volkswagen Group",
+    "bentley": "Volkswagen Group",
+    "lamborghini": "Volkswagen Group",
+
+    "toyota": "Toyota Group",
+    "lexus": "Toyota Group",
+    "daihatsu": "Toyota Group",
+
+    "hyundai": "Hyundai Motor Group",
+    "kia": "Hyundai Motor Group",
+    "genesis": "Hyundai Motor Group",
+    "hyundai_mobis": "Hyundai Motor Group",
+
+    "gm": "General Motors",
+    "chevrolet": "General Motors",
+    "cadillac": "General Motors",
+    "buick": "General Motors",
+    "gmc": "General Motors",
+
+    "stellantis": "Stellantis",
+    "jeep": "Stellantis",
+    "peugeot": "Stellantis",
+    "fiat": "Stellantis",
+    "chrysler": "Stellantis",
+    "ram": "Stellantis",
+    "dodge": "Stellantis",
+    "alfa_romeo": "Stellantis",
+    "maserati": "Stellantis",
+    "citroen": "Stellantis",
+    "opel": "Stellantis",
+
+    "volvo": "Geely Holding Group",
+    "polestar": "Geely Holding Group",
+    "geely": "Geely Holding Group",
+    "zeekr": "Geely Holding Group",
+    "lotus": "Geely Holding Group",
+
+    "bmw": "BMW Group",
+    "mini": "BMW Group",
+    "rolls_royce": "BMW Group",
+
+    "mercedes": "Mercedes-Benz Group",
+
+    "ford": "Ford Motor Company",
+    "lincoln": "Ford Motor Company",
+
+    "honda": "Honda Motor Company",
+    "acura": "Honda Motor Company",
+
+    "renault": "Renault-Nissan-Mitsubishi Alliance",
+    "nissan": "Renault-Nissan-Mitsubishi Alliance",
+    "infiniti": "Renault-Nissan-Mitsubishi Alliance",
+    "mitsubishi": "Renault-Nissan-Mitsubishi Alliance",
+    "dacia": "Renault-Nissan-Mitsubishi Alliance",
+}
+
+
+def _contains_alias(text: str, alias: str) -> bool:
+    """Helper to detect alias presence with proper word boundary or character matching."""
+    if not alias:
+        return False
+    if re.search(r"[^a-zA-Z0-9\s\-._]", alias):
+        return alias.lower() in text.lower()
+    pattern = rf"(?<![A-Za-z0-9]){re.escape(alias.lower())}(?![A-Za-z0-9])"
+    return re.search(pattern, text.lower()) is not None
+
+
+def canonical_entity(name_or_alias: str) -> str | None:
+    """Return canonical brand/legal entity identifier for a name or alias."""
+    if not name_or_alias:
+        return None
+    cleaned = name_or_alias.strip().lower()
+    return CANONICAL_ENTITY_MAP.get(cleaned)
+
+
+def parent_group(entity_or_name: str) -> str | None:
+    """Return parent corporate group for a canonical entity or alias."""
+    if not entity_or_name:
+        return None
+    cleaned = entity_or_name.strip().lower()
+    if cleaned in PARENT_GROUPS:
+        return PARENT_GROUPS[cleaned]
+    can = CANONICAL_ENTITY_MAP.get(cleaned)
+    if can and can in PARENT_GROUPS:
+        return PARENT_GROUPS[can]
+    return None
+
+
+def extract_canonical_entities(article: Article) -> set[str]:
+    """Extract canonical brand/legal entities for event clustering and guards.
+
+    Inspects title, source, publisher, tags, and specific entity fields.
+    """
+    found: set[str] = set()
+    primary_text = f"{article.title} {article.source} {article.publisher or ''} {' '.join(article.tags)}"
+
+    sorted_aliases = sorted(CANONICAL_ENTITY_MAP.keys(), key=lambda k: len(k), reverse=True)
+    for alias in sorted_aliases:
+        if _contains_alias(primary_text, alias):
+            found.add(CANONICAL_ENTITY_MAP[alias])
+
+    # Fallback to article.entities if none found in title/source/tags
+    if not found and article.entities:
+        for ent in article.entities:
+            can = canonical_entity(ent)
+            if can:
+                found.add(can)
+
+    return found
+
+
+def extract_parent_groups(article: Article) -> set[str]:
+    """Extract parent corporate groups as weak contextual signals."""
+    groups: set[str] = set()
+    entities = extract_canonical_entities(article)
+    for ent in entities:
+        grp = parent_group(ent)
+        if grp:
+            groups.add(grp)
+
+    combined = f"{article.title} {article.source} {' '.join(article.entities)}".lower()
+    for grp_name in set(PARENT_GROUPS.values()):
+        if grp_name.lower() in combined:
+            groups.add(grp_name)
+
+    return groups
 
 # Event Action Themes
 EVENT_ACTION_THEMES = {
@@ -117,7 +371,7 @@ EVENT_ACTION_THEMES = {
         "hack", "cyber", "vulnerabilit", "ransomwar", "breach"
     ],
     "software_platform": [
-        "sdv", "autosar", "ota", "operat system", "vehicle os", "middleware"
+        "sdv", "autosar", "ota", "operating system", "vehicle os", "middleware", "infotainment", "software"
     ],
 }
 
@@ -133,20 +387,8 @@ STOP_WORDS = {
 
 
 def extract_companies(article: Article) -> set[str]:
-    """Extract canonical company/entity aliases from article entities, title, and tags."""
-    found = set()
-    sources_to_check = [
-        *article.entities,
-        article.title,
-        *article.tags,
-        article.source,
-        article.publisher or "",
-    ]
-    combined = " ".join(sources_to_check).lower()
-    for alias, canonical in ENTITY_ALIASES.items():
-        if re.search(rf"\b{re.escape(alias)}\b", combined):
-            found.add(canonical)
-    return found
+    """Extract canonical brand/legal entity identifiers for an article."""
+    return extract_canonical_entities(article)
 
 
 def extract_model_identifiers(text: str) -> set[str]:
@@ -252,12 +494,36 @@ def are_articles_same_event(
     if d1 and d2 and d1.isdisjoint(d2):
         return False, 0.0
 
-    # Guard D: Company mismatch
-    c1 = extract_companies(a1)
-    c2 = extract_companies(a2)
-    # If both have identified companies and share none, they cannot be the same event
+    # Guard D: Brand / legal entity mismatch with parent group context
+    c1 = extract_canonical_entities(a1)
+    c2 = extract_canonical_entities(a2)
+    p1 = extract_parent_groups(a1)
+    p2 = extract_parent_groups(a2)
+
     if c1 and c2 and c1.isdisjoint(c2):
-        return False, 0.0
+        # If they don't share a parent group, hard reject
+        if not (p1 and p2 and (p1 & p2)):
+            return False, 0.0
+
+        # When sharing a parent group, parent_group is only a weak contextual signal.
+        # Distinct brands under the same group MUST remain separate events unless
+        # there are additional strong signals proving they are the same real-world event.
+        tokens1 = extract_stemmed_tokens(a1.title)
+        tokens2 = extract_stemmed_tokens(a2.title)
+        inter = tokens1 & tokens2
+        union = tokens1 | tokens2
+        jaccard = len(inter) / max(1, len(union))
+        containment = len(inter) / max(1, min(len(tokens1), len(tokens2)))
+        themes1 = extract_event_themes(t1)
+        themes2 = extract_event_themes(t2)
+
+        has_strong_joint_signal = (
+            bool(themes1 & themes2)
+            and len(inter) >= 3
+            and (jaccard >= 0.50 or containment >= 0.70)
+        )
+        if not has_strong_joint_signal:
+            return False, 0.0
 
     # Guard E: Numeric identifiers discrepancy (e.g. update 0 vs update 1, 500,000 vs 100,000)
     nums1 = set(re.findall(r"\b\d+\b", a1.title))
