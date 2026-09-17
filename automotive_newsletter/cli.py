@@ -33,6 +33,10 @@ def main(argv: list[str] | None = None) -> int:
     schedule_parser = subparsers.add_parser("schedule", help="Collect once per day with robust scheduler")
     schedule_parser.add_argument("--time", dest="collection_time")
 
+    diag_parser = subparsers.add_parser("diagnose-clustering", help="Diagnose event clustering quality and coherence")
+    diag_parser.add_argument("--date", dest="issue_date", help="Issue date (YYYY-MM-DD), default to latest")
+    diag_parser.add_argument("--db", dest="db_path", help="Path to SQLite database")
+
     args = parser.parse_args(argv)
     command = args.command or "serve"
 
@@ -112,5 +116,69 @@ def main(argv: list[str] | None = None) -> int:
         except (KeyboardInterrupt, SystemExit):
             print("\nscheduler stopped")
         return 0
+    if command == "diagnose-clustering":
+        from .clustering import (
+            cluster_articles,
+            compute_event_coherence_metrics,
+            calculate_event_similarity,
+        )
+        from .models import Article
+
+        settings = load_settings()
+        db_path = args.db_path or settings.db_path
+        store = NewsletterStore(db_path)
+        issue = store.get_issue(args.issue_date) if args.issue_date else store.latest_issue()
+
+        articles = issue.articles if issue else []
+        issue_label = issue.issue_date if issue else "Synthetic Benchmark Fixture"
+
+        if not articles:
+            from datetime import timezone
+            dt = datetime.now(timezone.utc)
+            articles = [
+                Article(title="Toyota and Nvidia announce software-defined vehicle partnership", url="https://reuters.com/1", source="Reuters", publisher="Reuters", published_at=dt, entities=["Toyota", "Nvidia"], priority_score=88),
+                Article(title="Toyota teams up with Nvidia on SDV computing platform", url="https://autonews.com/2", source="Automotive News", publisher="Automotive News", published_at=dt, entities=["Toyota", "Nvidia"], priority_score=80),
+                Article(title="Toyota Motor Corporation and NVIDIA Expand Strategic SDV Collaboration", url="https://toyota.com/3", source="Toyota Newsroom", publisher="Toyota Newsroom", source_type="official", is_official=True, published_at=dt, entities=["Toyota", "Nvidia"], priority_score=85),
+                Article(title="Toyota expands autonomous driving road tests in Tokyo", url="https://bloomberg.com/4", source="Bloomberg", publisher="Bloomberg", published_at=dt, entities=["Toyota"], priority_score=72),
+                Article(title="Volkswagen announces major European manufacturing restructuring", url="https://reuters.com/5", source="Reuters", publisher="Reuters", published_at=dt, entities=["Volkswagen"], priority_score=92),
+                Article(title="VW restructuring plans accelerate across plants", url="https://autonews.com/6", source="Automotive News", publisher="Automotive News", published_at=dt, entities=["VW"], priority_score=82),
+                Article(title="Ford recalls 500,000 trucks over brake defect", url="https://nhtsa.gov/7", source="NHTSA", publisher="NHTSA", source_type="regulator", published_at=dt, entities=["Ford"], priority_score=95),
+                Article(title="Ford issues recall for 500,000 pickup trucks due to brake line issues", url="https://reuters.com/8", source="Reuters", publisher="Reuters", published_at=dt, entities=["Ford"], priority_score=86),
+                Article(title="Ford recalls 100,000 SUVs over airbag inflator risk", url="https://nhtsa.gov/9", source="NHTSA", publisher="NHTSA", source_type="regulator", published_at=dt, entities=["Ford"], priority_score=90),
+            ]
+
+        events, event_articles, all_articles = cluster_articles(articles)
+
+        print("=" * 80)
+        print(f"EVENT CLUSTERING DIAGNOSTIC REPORT (Issue: {issue_label})")
+        print(f"Total Articles: {len(all_articles)} | Total Events: {len(events)} | Multi-article Events: {sum(1 for e in events if e.source_count > 1)}")
+        print("=" * 80)
+
+        suspicious_count = 0
+        for idx, event in enumerate(events, 1):
+            cluster_arts = [a for a in all_articles if a.event_id == event.event_id]
+            primary = next((a for a in cluster_arts if a.article_id == event.primary_article_id), cluster_arts[0])
+            metrics = compute_event_coherence_metrics(cluster_arts, primary)
+
+            if metrics.is_suspicious:
+                suspicious_count += 1
+                status_str = f"SUSPICIOUS ({'; '.join(metrics.suspicious_reasons)})"
+            else:
+                status_str = "HEALTHY"
+
+            print(f"\n[Event {idx}] {event.event_id} | Members: {metrics.member_count} | Indep Sources: {metrics.independent_source_count} | Coherence: {metrics.avg_similarity:.3f} (min: {metrics.min_similarity:.3f})")
+            print(f"Status: {status_str}")
+            print(f"Entities: {', '.join(metrics.entity_overlap) if metrics.entity_overlap else 'None'}")
+            print(f"Themes: {', '.join(metrics.theme_overlap) if metrics.theme_overlap else 'None'}")
+            print("Articles:")
+            for art in cluster_arts:
+                sim = 1.0 if art.article_id == primary.article_id else calculate_event_similarity(primary, art)
+                tag = "(Primary)" if art.article_id == primary.article_id else ("(Official)" if art.is_official else "(Coverage)")
+                print(f"  * [{sim:.3f}] {tag:<10} [{art.publisher or art.source}] {art.title}")
+
+        print("\n" + "=" * 80)
+        print(f"DIAGNOSTIC SUMMARY: {len(events) - suspicious_count} Healthy, {suspicious_count} Suspicious clusters.")
+        print("=" * 80)
+        return 0 if suspicious_count == 0 else 1
     parser.print_help()
     return 1

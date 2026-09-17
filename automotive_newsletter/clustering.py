@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Iterable
 
@@ -16,6 +17,8 @@ MODEL_PATTERNS = [
     re.compile(r"\bev\s*([1-9])\b", re.IGNORECASE),
     re.compile(r"\b(taycan|macan|panamera|cayenne)\b", re.IGNORECASE),
     re.compile(r"\b(mach-e|f-150\s+lightning)\b", re.IGNORECASE),
+    re.compile(r"\b(i[34578]|ix[13]?|ix)\b", re.IGNORECASE),
+    re.compile(r"\b(eq[abces]|eqe|eqs)\b", re.IGNORECASE),
 ]
 
 # Generation & Standard patterns
@@ -200,6 +203,22 @@ CANONICAL_ENTITY_MAP: dict[str, str] = {
     "panasonic": "panasonic",
     "파나소닉": "panasonic",
 
+    # Autonomous & Tech Partners
+    "nvidia": "nvidia",
+    "엔비디아": "nvidia",
+    "qualcomm": "qualcomm",
+    "퀄컴": "qualcomm",
+    "mobileye": "mobileye",
+    "모빌아이": "mobileye",
+    "waymo": "waymo",
+    "웨이모": "waymo",
+    "sony": "sony",
+    "소니": "sony",
+    "foxconn": "foxconn",
+    "폭스콘": "foxconn",
+    "baidu": "baidu",
+    "바이두": "baidu",
+
     # Regulators
     "nhtsa": "nhtsa",
     "kba": "kba",
@@ -273,14 +292,144 @@ PARENT_GROUPS: dict[str, str] = {
 }
 
 
-def _contains_alias(text: str, alias: str) -> bool:
-    """Helper to detect alias presence with proper word boundary or character matching."""
+OEM_ENTITIES: set[str] = {
+    "volkswagen", "audi", "porsche", "skoda", "seat", "cupra", "bentley", "lamborghini",
+    "toyota", "lexus", "daihatsu",
+    "hyundai", "kia", "genesis",
+    "gm", "chevrolet", "cadillac", "buick", "gmc",
+    "stellantis", "jeep", "peugeot", "fiat", "chrysler", "ram", "dodge", "alfa_romeo", "maserati", "citroen", "opel",
+    "volvo", "polestar", "geely", "zeekr", "lotus",
+    "bmw", "mini", "rolls_royce",
+    "mercedes",
+    "ford", "lincoln",
+    "honda", "acura",
+    "renault", "nissan", "infiniti", "mitsubishi", "dacia",
+    "tesla", "byd", "rivian", "lucid", "nio", "xpeng",
+}
+
+TECH_SUPPLIER_ENTITIES: set[str] = {
+    "bosch", "continental", "zf", "denso", "magna", "valeo", "forvia", "aptiv",
+    "catl", "lg_energy", "samsung_sdi", "sk_on", "panasonic",
+    "nvidia", "qualcomm", "mobileye", "waymo", "sony", "foxconn", "baidu", "hyundai_mobis",
+}
+
+# Context patterns for common short/ambiguous word disambiguation
+COMMON_WORD_DISAMBIGUATION: dict[str, dict[str, list[re.Pattern]]] = {
+    "seat": {
+        "negative": [
+            re.compile(r"\bseats?\s+(?:belt|belts|cushion|cushions|heater|heaters|heating|warmer|warmers|track|tracks|frame|frames|module|modules|adjustment|sensor|sensors|position|occupancy|cover|covers|massage|ventilation|failure|problem|issue)\b", re.I),
+            re.compile(r"\b(?:heated|heating|ventilated|massage|leather|power|folding|safety|child|baby|infant|bucket|front|rear|back|driver|passenger|third-row|second-row|row)\s+seats?\b", re.I),
+            re.compile(r"\b(?:driver|passenger|front|rear)\s+(?:side\s+)?seat\b", re.I),
+            re.compile(r"\bseating\b", re.I),
+        ],
+        "positive": [
+            re.compile(r"\bseat\s*(?:s\.?a\.?|cupra|martorell|ibiza|leon|ateca|arona|tarraco)\b", re.I),
+            re.compile(r"\b(?:carmaker|automaker|oem|brand)\s+seat\b", re.I),
+            re.compile(r"\bseat\s+(?:brand|carmaker|automaker|unveils|reveals|debuts|recalls|reports|launches|delivers|sales)\b", re.I),
+        ],
+    },
+    "mini": {
+        "negative": [
+            re.compile(r"\bmini(?:-|\s+)(?:excavator|van|bus|split|series|led|lidar|truck|factory|suv|size|car|market)\b", re.I),
+            re.compile(r"\bin\s+mini\b", re.I),
+        ],
+        "positive": [
+            re.compile(r"\bmini\s*(?:cooper|countryman|aceman|clubman|john cooper|electric|ev|brand|carmaker|automaker)\b", re.I),
+            re.compile(r"\b(?:bmw|carmaker|automaker|brand)\s+mini\b", re.I),
+            re.compile(r"\bmini\s+(?:unveils|reveals|debuts|launches|reports|recalls|sales)\b", re.I),
+        ],
+    },
+    "ram": {
+        "negative": [
+            re.compile(r"\b(?:\d+\s*)?(?:gb|mb|tb|ddr|ddr4|ddr5)\s+ram\b", re.I),
+            re.compile(r"\bram\s+(?:into|med|ming|s\s+into)\b", re.I),
+            re.compile(r"\b(?:hydraulic|battering)\s+ram\b", re.I),
+        ],
+        "positive": [
+            re.compile(r"\bram\s*(?:1500|2500|3500|trx|promaster|rev|pickup|truck|trucks|brand|carmaker|automaker)\b", re.I),
+            re.compile(r"\b(?:dodge|stellantis|carmaker|automaker|brand)\s+ram\b", re.I),
+            re.compile(r"\bram\s+(?:unveils|reveals|debuts|launches|recalls|sales)\b", re.I),
+        ],
+    },
+    "ford": {
+        "negative": [
+            re.compile(r"\b(?:harrison|gerald|doug|tom|betty|henry)\s+ford\b", re.I),
+            re.compile(r"\briver\s+ford\b", re.I),
+        ],
+        "positive": [
+            re.compile(r"\bford\s*(?:motor|motor\s+co|f-150|mustang|bronco|explorer|ranger|ev|evs|ceo|shares|recalls|unveils|reveals|sales|said|announced|trucks?)\b", re.I),
+            re.compile(r"\b(?:carmaker|automaker|brand)\s+ford\b", re.I),
+        ],
+    },
+    "lotus": {
+        "negative": [
+            re.compile(r"\b(?:white|blue|water|sacred)\s+lotus\b", re.I),
+            re.compile(r"\blotus\s+(?:flower|leaf|position|temple)\b", re.I),
+        ],
+        "positive": [
+            re.compile(r"\blotus\s*(?:cars|emira|eletre|evija|emeya|brand|carmaker|automaker|group)\b", re.I),
+            re.compile(r"\b(?:geely|carmaker|automaker|brand)\s+lotus\b", re.I),
+            re.compile(r"\blotus\s+(?:unveils|reveals|debuts|launches|sales)\b", re.I),
+        ],
+    },
+    "gm": {
+        "negative": [
+            re.compile(r"\b\d+\s*gm\b", re.I),
+            re.compile(r"\bgm\s+(?:foods|crops)\b", re.I),
+            re.compile(r"\b(?:plant|general)\s+gm\b", re.I),
+        ],
+        "positive": [
+            re.compile(r"\bgeneral\s+motors\b", re.I),
+            re.compile(r"\bgm\s+(?:cruise|korea|defense|motors|ev|evs|ceo|shares|stock|invests|investment|plant|plants|workers|uaw|recalls|unveils|reveals|sales|profit|earnings|said|announced|reported)\b", re.I),
+            re.compile(r"\b(?:carmaker|automaker|oem)\s+gm\b", re.I),
+        ],
+    },
+    "zf": {
+        "negative": [],
+        "positive": [
+            re.compile(r"\bzf\s*(?:friedrichshafen|group|chassis|gearbox|transmission|supplier|lifeguard|procurement|mobility)\b", re.I),
+            re.compile(r"\b(?:supplier|tier\s*1)\s+zf\b", re.I),
+            re.compile(r"\bzf\s+(?:said|announced|reported|unveiled|revealed)\b", re.I),
+        ],
+    },
+}
+
+
+def _contains_alias(text: str, alias: str, raw_text: str = "") -> bool:
+    """Helper to detect alias presence with proper word boundary, character matching, and disambiguation."""
     if not alias:
         return False
+    alias_lower = alias.lower()
     if re.search(r"[^a-zA-Z0-9\s\-._]", alias):
-        return alias.lower() in text.lower()
-    pattern = rf"(?<![A-Za-z0-9]){re.escape(alias.lower())}(?![A-Za-z0-9])"
-    return re.search(pattern, text.lower()) is not None
+        has_match = alias_lower in text.lower()
+    else:
+        pattern = rf"(?<![A-Za-z0-9]){re.escape(alias_lower)}(?![A-Za-z0-9])"
+        has_match = re.search(pattern, text.lower()) is not None
+
+    if not has_match:
+        return False
+
+    # Disambiguate common/short words
+    if alias_lower in COMMON_WORD_DISAMBIGUATION:
+        rules = COMMON_WORD_DISAMBIGUATION[alias_lower]
+        combined = f"{text} {raw_text}"
+
+        # 1. If positive pattern matches, it's definitely the brand
+        if any(pat.search(combined) for pat in rules["positive"]):
+            return True
+
+        # 2. If negative pattern matches, it's NOT the brand
+        if any(pat.search(combined) for pat in rules["negative"]):
+            return False
+
+        # 3. For short 2-letter words (gm, zf) or ambiguous words (seat, mini, ram),
+        # check uppercase raw_text boundary
+        if alias_lower in {"gm", "zf", "seat", "mini", "ram", "lotus"}:
+            if raw_text and re.search(rf"\b{re.escape(alias.upper())}\b", raw_text):
+                return True
+            return False
+
+    return True
 
 
 def canonical_entity(name_or_alias: str) -> str | None:
@@ -314,7 +463,7 @@ def extract_canonical_entities(article: Article) -> set[str]:
 
     sorted_aliases = sorted(CANONICAL_ENTITY_MAP.keys(), key=lambda k: len(k), reverse=True)
     for alias in sorted_aliases:
-        if _contains_alias(primary_text, alias):
+        if _contains_alias(primary_text, alias, raw_text=primary_text):
             found.add(CANONICAL_ENTITY_MAP[alias])
 
     # Fallback to article.entities if none found in title/source/tags
@@ -343,37 +492,72 @@ def extract_parent_groups(article: Article) -> set[str]:
 
     return groups
 
-# Event Action Themes
-EVENT_ACTION_THEMES = {
-    "restructuring": [
-        "restructur", "cut", "layoff", "job cut", "closur", "plant clos",
-        "reorganiz", "downsiz", "european oper"
-    ],
-    "recall": [
-        "recall", "defect", "investig", "probe", "nhtsa", "inquiry"
-    ],
-    "partnership_jv": [
-        "joint ventur", "partnership", "collaborat", "allianc", "team up", "partner"
-    ],
-    "investment_plant": [
-        "invest", "gigafactory", "plant build", "expans", "spending"
-    ],
-    "platform_unveil": [
-        "unveil", "reveal", "debut", "concept", "premier"
-    ],
-    "earnings_financial": [
-        "earn", "profit", "revenu", "q1", "q2", "q3", "q4", "margin", "guidanc", "loss"
-    ],
-    "leadership_exec": [
-        "ceo", "appoint", "step down", "resign", "execut", "chief"
-    ],
-    "cybersecurity_incident": [
-        "hack", "cyber", "vulnerabilit", "ransomwar", "breach"
-    ],
-    "software_platform": [
-        "sdv", "autosar", "ota", "operating system", "vehicle os", "middleware", "infotainment", "software"
-    ],
+# Multi-Tiered Event Action Themes (Strong / Medium / Weak)
+THEME_TIERS: dict[str, dict[str, list[str]]] = {
+    "strong": {
+        "restructuring": [
+            "mass layoff", "plant closure", "factory closure", "workforce reduction",
+            "job cuts", "downsizing", "restructuring program", "closing plant", "cut jobs",
+        ],
+        "recall": [
+            "safety recall", "recall campaign", "nhtsa recall", "kba recall",
+            "recalls vehicles", "recalling vehicles", "recalled", "safety probe",
+        ],
+        "partnership_jv": [
+            "joint venture", "strategic partnership", "mou", "consortium", "jointly develop",
+            "strategic collaboration", "team up", "teams up",
+        ],
+        "investment_plant": [
+            "gigafactory", "battery plant", "new factory", "plant expansion", "billion investment",
+            "million investment", "groundbreaking", "build factory", "build plant", "battery facility",
+        ],
+        "platform_unveil": [
+            "world premiere", "concept car", "debuts platform", "reveals next-gen", "unveils new",
+            "global debut", "unveiled",
+        ],
+        "earnings_financial": [
+            "operating profit", "fiscal year", "revenue beats", "revenue misses", "guidance cut",
+            "quarterly profit", "quarterly earnings", "net profit", "q1 earnings", "q2 earnings",
+            "q3 earnings", "q4 earnings", "operating margin",
+        ],
+        "leadership_exec": [
+            "ceo resigns", "names new ceo", "appoints ceo", "steps down as ceo", "board chairman",
+            "chief executive",
+        ],
+        "cybersecurity_incident": [
+            "ransomware attack", "data breach", "security vulnerability", "cyber attack", "hackers breach",
+        ],
+        "software_platform": [
+            "software-defined vehicle", "sdv architecture", "vehicle os", "zonal architecture",
+            "ota update", "infotainment platform",
+        ],
+    },
+    "medium": {
+        "restructuring": ["restructur", "cut", "layoff", "job cut", "closur", "plant clos", "reorganiz", "downsiz", "european oper"],
+        "recall": ["recall", "recalls", "defect", "investig", "probe", "nhtsa", "inquiry"],
+        "partnership_jv": ["joint ventur", "partnership", "collaborat", "allianc", "team up", "partner", "joint"],
+        "investment_plant": ["invest", "gigafactory", "plant build", "expans", "spending", "facility"],
+        "platform_unveil": ["unveil", "reveal", "debut", "concept", "premier"],
+        "earnings_financial": ["earn", "profit", "revenu", "q1", "q2", "q3", "q4", "margin", "guidanc", "loss"],
+        "leadership_exec": ["ceo", "appoint", "step down", "resign", "execut", "chief"],
+        "cybersecurity_incident": ["hack", "cyber", "vulnerabilit", "ransomwar", "breach"],
+        "software_platform": ["sdv", "autosar", "ota", "operating system", "vehicle os", "middleware", "infotainment"],
+    },
+    "weak": {
+        "restructuring": ["loss"],
+        "investment_plant": ["plant"],
+        "leadership_exec": ["leader"],
+        "software_platform": ["software"],
+    },
 }
+
+# Preserve EVENT_ACTION_THEMES for backwards compatibility
+EVENT_ACTION_THEMES: dict[str, list[str]] = {
+    theme: sorted(list(set(THEME_TIERS["strong"].get(theme, []) + THEME_TIERS["medium"].get(theme, []))))
+    for theme in set(list(THEME_TIERS["strong"].keys()) + list(THEME_TIERS["medium"].keys()))
+}
+
+ACRONYM_THEMES: set[str] = {"mou", "ota", "sdv", "q1", "q2", "q3", "q4", "ceo"}
 
 STOP_WORDS = {
     "a", "an", "the", "and", "or", "but", "if", "in", "on", "at", "to", "for", "with",
@@ -428,14 +612,33 @@ def extract_recall_defects(text: str) -> set[str]:
     return defects
 
 
+def _matches_theme_term(term: str, text: str) -> bool:
+    """Match theme keyword with word boundary protection for acronyms."""
+    if term in ACRONYM_THEMES:
+        return re.search(rf"\b{re.escape(term)}\b", text) is not None
+    return re.search(rf"\b{re.escape(term)}", text) is not None
+
+
 def extract_event_themes(text: str) -> set[str]:
-    """Extract high-level automotive event action themes."""
+    """Extract strong and medium automotive event action themes."""
     text_lower = text.lower()
-    themes = set()
-    for theme_name, terms in EVENT_ACTION_THEMES.items():
-        if any(term in text_lower for term in terms):
-            themes.add(theme_name)
+    themes: set[str] = set()
+    for tier in ("strong", "medium"):
+        for theme_name, terms in THEME_TIERS[tier].items():
+            if any(_matches_theme_term(term, text_lower) for term in terms):
+                themes.add(theme_name)
     return themes
+
+
+def extract_event_themes_detailed(text: str) -> dict[str, set[str]]:
+    """Extract themes categorized by confidence tier (strong, medium, weak)."""
+    text_lower = text.lower()
+    res: dict[str, set[str]] = {"strong": set(), "medium": set(), "weak": set()}
+    for tier in ("strong", "medium", "weak"):
+        for theme_name, terms in THEME_TIERS[tier].items():
+            if any(_matches_theme_term(term, text_lower) for term in terms):
+                res[tier].add(theme_name)
+    return res
 
 
 EVENT_SIMILARITY_THRESHOLD: float = 0.60
@@ -536,11 +739,14 @@ def calculate_event_similarity(
     if d1 and d2 and d1.isdisjoint(d2):
         return 0.0
 
-    # Guard D: Brand / legal entity mismatch with parent group context
+    # Guard D: Brand / legal entity mismatch with parent group context and cross-OEM separation
     c1 = extract_canonical_entities(a1)
     c2 = extract_canonical_entities(a2)
     p1 = extract_parent_groups(a1)
     p2 = extract_parent_groups(a2)
+
+    oem1 = c1 & OEM_ENTITIES
+    oem2 = c2 & OEM_ENTITIES
 
     tokens1 = extract_stemmed_tokens(a1.title)
     tokens2 = extract_stemmed_tokens(a2.title)
@@ -552,14 +758,28 @@ def calculate_event_similarity(
     themes2 = extract_event_themes(t2)
     has_theme_overlap = bool(themes1 & themes2)
 
+    # Cross-OEM Guard:
+    # If both articles have known OEMs, but have NO common OEM (disjoint):
+    # e.g. Toyota x Nvidia vs Mercedes x Nvidia, or Ford brake vs GM brake
+    if oem1 and oem2 and oem1.isdisjoint(oem2):
+        if not (p1 and p2 and (p1 & p2)):
+            return 0.0
+
+        # Distinct brands under the same parent group (e.g. Hyundai vs Kia):
+        # MUST remain separate events unless there are strong joint signals (shared theme + high overlap)
+        has_strong_joint_signal = (
+            has_theme_overlap
+            and len(inter) >= 3
+            and (jaccard >= 0.50 or containment >= 0.70)
+        )
+        if not has_strong_joint_signal:
+            return 0.0
+
     if c1 and c2 and c1.isdisjoint(c2):
         # If they don't share a parent group, hard reject
         if not (p1 and p2 and (p1 & p2)):
             return 0.0
 
-        # Parent group is only a weak contextual signal.
-        # Distinct brands under the same group MUST remain separate events unless
-        # there are additional strong signals proving they are the same real-world event.
         has_strong_joint_signal = (
             has_theme_overlap
             and len(inter) >= 3
@@ -575,7 +795,7 @@ def calculate_event_similarity(
         return 0.0
 
     # Guard F: Action / Theme incompatibility
-    # If both have strong, disjoint event action themes (e.g. restructuring vs partnership)
+    # If both have strong/medium, disjoint event action themes (e.g. restructuring vs partnership)
     if themes1 and themes2 and themes1.isdisjoint(themes2):
         return 0.0
 
@@ -586,7 +806,8 @@ def calculate_event_similarity(
 
     # Match boosts
     num_bonus = 0.04 if (nums1 and nums2 and bool(nums1 & nums2)) else 0.0
-    model_bonus = 0.04 if (m1 and m2 and bool(m1 & m2)) else 0.0
+    model_bonus = 0.05 if (m1 and m2 and bool(m1 & m2)) else 0.0
+    multi_entity_bonus = 0.05 if len(c1 & c2) >= 2 else 0.0
     topics1 = {t.lower() for t in a1.topics}
     topics2 = {t.lower() for t in a2.topics}
     topic_jaccard = len(topics1 & topics2) / max(1, len(topics1 | topics2)) if (topics1 and topics2) else 0.0
@@ -594,10 +815,14 @@ def calculate_event_similarity(
 
     if has_company_overlap and has_theme_overlap:
         if len(inter) >= 1 or containment >= 0.25:
-            score = 0.68 + 0.26 * lex + num_bonus + model_bonus + topic_bonus
+            score = 0.68 + 0.24 * lex + num_bonus + model_bonus + multi_entity_bonus + topic_bonus
             return round(min(0.99, max(0.60, score)), 3)
     elif has_company_overlap:
-        if containment >= 0.40 or len(inter) >= 2:
+        # If one article has an explicit action theme and the other does not:
+        if bool(themes1 ^ themes2):
+            score = 0.35 + 0.30 * lex + num_bonus + model_bonus + topic_bonus
+            return round(min(0.55, max(0.35, score)), 3)
+        elif containment >= 0.40 or len(inter) >= 2:
             score = 0.58 + 0.32 * lex + num_bonus + model_bonus + topic_bonus
             return round(min(0.95, max(0.50, score)), 3)
     elif p1 and p2 and (p1 & p2) and has_theme_overlap and (len(inter) >= 3 and (jaccard >= 0.50 or containment >= 0.70)):
@@ -607,7 +832,7 @@ def calculate_event_similarity(
         score = 0.60 + 0.38 * lex + num_bonus
         return round(min(0.98, max(0.60, score)), 3)
 
-    return round(min(0.55, 0.60 * lex), 3)
+    return round(min(0.20, 0.40 * lex), 3)
 
 
 def are_articles_same_event(
@@ -875,6 +1100,108 @@ def calculate_event_source_agreement(cluster: list[Article], primary: Article) -
         "reference_source_name": reference_source_name,
         "related_sources": related_sources,
     }
+
+
+@dataclass
+class EventCoherenceMetrics:
+    """Internal diagnostic metrics for event cluster coherence and quality."""
+    event_id: str
+    primary_title: str
+    member_count: int
+    min_similarity: float
+    avg_similarity: float
+    entity_overlap: list[str]
+    theme_overlap: list[str]
+    source_count: int
+    independent_source_count: int
+    is_suspicious: bool = False
+    suspicious_reasons: list[str] = field(default_factory=list)
+
+
+def compute_event_coherence_metrics(
+    cluster: list[Article],
+    primary: Article,
+    window_hours: float = 72.0,
+) -> EventCoherenceMetrics:
+    """Compute diagnostic coherence metrics for an event cluster."""
+    event_seed = f"{primary.article_id}_{primary.title}"
+    event_id = f"evt_{hashlib.sha256(event_seed.encode()).hexdigest()[:16]}"
+    member_count = len(cluster)
+
+    if member_count <= 1:
+        entities = sorted(list(extract_canonical_entities(primary)))
+        t = f"{primary.title} {primary.summary_ko} {' '.join(primary.tags)}"
+        themes = sorted(list(extract_event_themes(t)))
+        return EventCoherenceMetrics(
+            event_id=event_id,
+            primary_title=primary.title,
+            member_count=1,
+            min_similarity=1.0,
+            avg_similarity=1.0,
+            entity_overlap=entities,
+            theme_overlap=themes,
+            source_count=1,
+            independent_source_count=1,
+            is_suspicious=False,
+            suspicious_reasons=[],
+        )
+
+    # Calculate pairwise similarities to primary
+    member_sims: list[float] = []
+    suspicious_reasons: list[str] = []
+
+    for m in cluster:
+        if m.article_id == primary.article_id:
+            continue
+        sim = calculate_event_similarity(primary, m, window_hours=window_hours)
+        member_sims.append(sim)
+        if sim < EVENT_MEMBER_THRESHOLD:
+            suspicious_reasons.append(
+                f"Member '{m.title[:40]}' similarity {sim:.3f} < threshold {EVENT_MEMBER_THRESHOLD}"
+            )
+
+    min_sim = round(min(member_sims), 3) if member_sims else 1.0
+    avg_sim = round(sum(member_sims) / len(member_sims), 3) if member_sims else 1.0
+
+    # Overlap of entities across all members
+    member_entities = [extract_canonical_entities(m) for m in cluster]
+    common_entities = set.intersection(*member_entities) if member_entities else set()
+
+    # Overlap of themes across all members
+    member_themes = [
+        extract_event_themes(f"{m.title} {m.summary_ko} {' '.join(m.tags)}")
+        for m in cluster
+    ]
+    common_themes = set.intersection(*member_themes) if member_themes else set()
+
+    # Pairwise compatibility check across all members in the cluster
+    for i in range(len(cluster)):
+        for j in range(i + 1, len(cluster)):
+            is_compat, sim_ij = are_articles_same_event(cluster[i], cluster[j], window_hours=window_hours)
+            if not is_compat:
+                suspicious_reasons.append(
+                    f"Pairwise incompatibility: '{cluster[i].title[:30]}' vs '{cluster[j].title[:30]}' (sim={sim_ij:.3f})"
+                )
+
+    agreement = calculate_event_source_agreement(cluster, primary)
+    source_count = int(agreement["source_count"])  # type: ignore[arg-type]
+    independent_source_count = int(agreement["independent_source_count"])  # type: ignore[arg-type]
+
+    is_suspicious = len(suspicious_reasons) > 0
+
+    return EventCoherenceMetrics(
+        event_id=event_id,
+        primary_title=primary.title,
+        member_count=member_count,
+        min_similarity=min_sim,
+        avg_similarity=avg_sim,
+        entity_overlap=sorted(list(common_entities)),
+        theme_overlap=sorted(list(common_themes)),
+        source_count=source_count,
+        independent_source_count=independent_source_count,
+        is_suspicious=is_suspicious,
+        suspicious_reasons=suspicious_reasons,
+    )
 
 
 def cluster_articles(
