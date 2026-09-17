@@ -140,6 +140,28 @@ class Article:
 
 
 @dataclass(slots=True)
+class Event:
+    event_id: str
+    title: str
+    category: str = "big"
+    created_at: datetime | None = None
+    importance: float = 0.0
+    primary_article_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.created_at is None:
+            self.created_at = datetime.now(timezone.utc)
+
+
+@dataclass(slots=True)
+class EventArticle:
+    event_id: str
+    article_id: str
+    relationship: str = "coverage"
+    similarity: float = 1.0
+
+
+@dataclass(slots=True)
 class NewsletterIssue:
     issue_date: str
     articles: list[Article] = field(default_factory=list)
@@ -147,4 +169,5 @@ class NewsletterIssue:
     title: str = "Automotive Newsletter"
     created_at: datetime | None = None
     sent_at: datetime | None = None
+    events: list[Event] = field(default_factory=list)
 

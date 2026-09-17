@@ -165,6 +165,17 @@ def display_url(article: Article) -> str | None:
     return target
 
 
+def display_event_coverage(article: Article) -> dict[str, str | int] | None:
+    count = 1 + len(article.related_article_ids)
+    if count <= 1:
+        return None
+    return {
+        "count": count,
+        "label_ko": f"{count}개 매체 보도 중",
+        "label_en": f"{count} sources covering this event",
+    }
+
+
 def regions_for_article(article: Article) -> list[RegionSignal]:
     text = _region_text(article)
     matched = [

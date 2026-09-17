@@ -317,7 +317,17 @@
                   data-regions="{% for region in article_regions %}{{ region.key }}{% if not loop.last %} {% endif %}{% endfor %}"
                 >
                   <div class="article-card__top">
-                    <span class="source-name">{{ article.source }}</span>
+                    <div class="article-source-group">
+                      <span class="source-name">{{ article.source }}</span>
+                      {% set coverage = display_event_coverage(article) %}
+                      {% if coverage %}
+                        <span class="coverage-badge" title="{{ coverage.label_en }}">
+                          <i data-lucide="layers"></i>
+                          <span class="lang-ko">{{ coverage.label_ko }}</span>
+                          <span class="lang-en" style="display:none;">{{ coverage.label_en }}</span>
+                        </span>
+                      {% endif %}
+                    </div>
                     <span class="priority-pill priority-pill--{{ priority.level }}">
                       <span class="lang-ko">{{ priority.label_ko }}</span>
                       <span class="lang-en" style="display:none;">{{ priority.label_en }}</span>

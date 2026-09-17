@@ -159,3 +159,22 @@ def test_conference_display_hides_past_events_and_sorts_by_event_date():
     assert past not in upcoming
     assert [article.title for article in sorted_conferences] == [earlier.title, later.title]
     assert visible_tags(earlier) == []
+
+
+def test_display_event_coverage():
+    from automotive_newsletter.presentation import display_event_coverage
+
+    art_single = Article(title="Standalone news", url="https://example.com/1", source="Wire")
+    assert display_event_coverage(art_single) is None
+
+    art_clustered = Article(
+        title="Major news",
+        url="https://example.com/2",
+        source="Wire",
+        related_article_ids=["art_3", "art_4", "art_5"],
+    )
+    cov = display_event_coverage(art_clustered)
+    assert cov is not None
+    assert cov["count"] == 4
+    assert cov["label_ko"] == "4개 매체 보도 중"
+    assert cov["label_en"] == "4 sources covering this event"

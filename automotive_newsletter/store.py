@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from .models import Article, NewsletterIssue
+from .models import Article, Event, EventArticle, NewsletterIssue
 
 
 class NewsletterStore:
@@ -16,10 +16,17 @@ class NewsletterStore:
         self._ensure_schema()
 
     def save_issue(
-        self, issue_date: str, articles: Iterable[Article], warnings: list[str] | None = None
+        self,
+        issue_date: str,
+        articles: Iterable[Article],
+        warnings: list[str] | None = None,
+        events: Iterable[Event] | None = None,
+        event_articles: Iterable[EventArticle] | None = None,
     ) -> NewsletterIssue:
         now = datetime.now(timezone.utc).isoformat()
         article_list = list(articles)
+        event_list = list(events) if events is not None else []
+        event_article_list = list(event_articles) if event_articles is not None else []
         with self._connect() as conn:
             existing = conn.execute(
                 "select id from issues where issue_date = ?", (issue_date,)
@@ -35,6 +42,11 @@ class NewsletterStore:
                         issue_id,
                     ),
                 )
+                conn.execute(
+                    "delete from event_articles where event_id in (select event_id from events where issue_id = ?)",
+                    (issue_id,),
+                )
+                conn.execute("delete from events where issue_id = ?", (issue_id,))
                 conn.execute("delete from articles where issue_id = ?", (issue_id,))
             else:
                 cursor = conn.execute(
@@ -123,6 +135,41 @@ class NewsletterStore:
                         article.summary_created_at.isoformat() if article.summary_created_at else None,
                     ),
                 )
+
+            for event in event_list:
+                conn.execute(
+                    """
+                    insert into events (event_id, issue_id, title, category, importance, primary_article_id, created_at)
+                    values (?, ?, ?, ?, ?, ?, ?)
+                    on conflict(event_id) do update set
+                        title = excluded.title,
+                        category = excluded.category,
+                        importance = excluded.importance,
+                        primary_article_id = excluded.primary_article_id
+                    """,
+                    (
+                        event.event_id,
+                        issue_id,
+                        event.title,
+                        event.category,
+                        event.importance,
+                        event.primary_article_id,
+                        event.created_at.isoformat() if event.created_at else now,
+                    ),
+                )
+
+            for ea in event_article_list:
+                conn.execute(
+                    """
+                    insert into event_articles (event_id, article_id, relationship, similarity)
+                    values (?, ?, ?, ?)
+                    on conflict(event_id, article_id) do update set
+                        relationship = excluded.relationship,
+                        similarity = excluded.similarity
+                    """,
+                    (ea.event_id, ea.article_id, ea.relationship, ea.similarity),
+                )
+
         issue = self.get_issue(issue_date)
         if issue is None:
             raise RuntimeError("failed to read issue after save")
@@ -148,8 +195,23 @@ class NewsletterStore:
                 "select * from articles where issue_id = ? order by position asc",
                 (issue_row["id"],),
             ).fetchall()
+            event_rows = conn.execute(
+                "select * from events where issue_id = ? order by importance desc, created_at desc",
+                (issue_row["id"],),
+            ).fetchall()
 
         articles = [self._row_to_article(row) for row in article_rows]
+        events = [
+            Event(
+                event_id=er["event_id"],
+                title=er["title"],
+                category=er["category"],
+                created_at=_parse_datetime(er["created_at"]),
+                importance=float(er["importance"]),
+                primary_article_id=er["primary_article_id"],
+            )
+            for er in event_rows
+        ]
         created_at = _parse_datetime(issue_row["created_at"])
         sent_at = _parse_datetime(issue_row["sent_at"])
         return NewsletterIssue(
@@ -159,7 +221,24 @@ class NewsletterStore:
             warnings=json.loads(issue_row["warnings"] or "[]"),
             created_at=created_at,
             sent_at=sent_at,
+            events=events,
         )
+
+    def get_event_articles(self, event_id: str) -> list[EventArticle]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "select * from event_articles where event_id = ? order by similarity desc",
+                (event_id,),
+            ).fetchall()
+        return [
+            EventArticle(
+                event_id=r["event_id"],
+                article_id=r["article_id"],
+                relationship=r["relationship"],
+                similarity=float(r["similarity"]),
+            )
+            for r in rows
+        ]
 
     def list_issues(self) -> list[tuple[str, int]]:
         with self._connect() as conn:
@@ -342,6 +421,31 @@ class NewsletterStore:
             for col_name, col_def in new_columns:
                 if col_name not in existing_columns:
                     conn.execute(f"alter table articles add column {col_name} {col_def}")
+
+            conn.execute(
+                """
+                create table if not exists events (
+                    event_id text primary key,
+                    issue_id integer not null references issues(id) on delete cascade,
+                    title text not null,
+                    category text not null default 'big',
+                    importance real not null default 0.0,
+                    primary_article_id text,
+                    created_at text not null
+                )
+                """
+            )
+            conn.execute(
+                """
+                create table if not exists event_articles (
+                    event_id text not null references events(event_id) on delete cascade,
+                    article_id text not null,
+                    relationship text not null default 'coverage',
+                    similarity real not null default 1.0,
+                    primary key (event_id, article_id)
+                )
+                """
+            )
 
             conn.execute(
                 """

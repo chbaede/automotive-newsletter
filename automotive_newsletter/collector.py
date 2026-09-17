@@ -14,6 +14,7 @@ import feedparser
 import httpx
 from bs4 import BeautifulSoup
 
+from .clustering import cluster_articles
 from .config import Settings, load_settings
 from .content_extractor import extract_usable_article_text
 from .models import Article, FeedEntry, NewsletterIssue
@@ -204,6 +205,11 @@ def build_issue_articles(
             classify_article(article, summarizer=summarizer) for article in entry_list  # type: ignore[arg-type]
         ]
 
+    # Cluster articles into events and select primary reference article for each event
+    _events, _event_articles, clustered_articles = cluster_articles(articles)
+    if clustered_articles:
+        articles = clustered_articles
+
     selected: list[Article] = []
     for section in SECTION_ORDER:
         section_articles = [article for article in articles if article.category == section]
@@ -236,9 +242,16 @@ def collect_and_store(
         entries, recent_articles=recent_articles, summarizer=summarizer
     )
     articles = ensure_required_fallbacks(articles, issue_date=issue_date)
+    events, event_articles, _ = cluster_articles(articles)
     if not articles and warnings:
         warnings = [*warnings, "수집된 기사가 없어 빈 이슈를 저장했습니다."]
-    return store.save_issue(issue_date, articles, warnings=warnings)
+    return store.save_issue(
+        issue_date,
+        articles,
+        warnings=warnings,
+        events=events,
+        event_articles=event_articles,
+    )
 
 
 def ensure_required_fallbacks(

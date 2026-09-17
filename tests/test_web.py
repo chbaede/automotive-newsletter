@@ -353,4 +353,31 @@ def test_ads_txt_and_seo_integration(tmp_path):
     assert 'content="2VmKKN5VGVIL9P-KiYywyJoeJQiKVCxEhRM4japgnzE"' in home_resp.text
 
 
+def test_home_renders_coverage_badge_for_clustered_articles(tmp_path):
+    from fastapi.testclient import TestClient
+
+    store = NewsletterStore(tmp_path / "newsletter.db")
+    store.save_issue(
+        "2026-09-16",
+        [
+            Article(
+                title="Volkswagen restructuring plan announced",
+                url="https://volkswagen-newsroom.com/vw",
+                source="Volkswagen Newsroom",
+                category="big",
+                related_article_ids=["art_reuters", "art_bloomberg", "art_autonews"],
+                score=90,
+            )
+        ],
+    )
+    app = create_app(store=store)
+    client = TestClient(app)
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "4개 매체 보도 중" in response.text
+    assert "4 sources covering this event" in response.text
+    assert "coverage-badge" in response.text
+
+
 
