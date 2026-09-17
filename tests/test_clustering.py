@@ -1423,6 +1423,220 @@ def test_model_and_generation_separation_regression():
     assert are_articles_same_event(t_rec1, t_rec2)[0] is True
 
 
+def test_hard_numeric_normalization_and_rigid_separation():
+    """Verify normalization of equivalent version formats and rigid separation of different numbers."""
+    from automotive_newsletter.clustering import extract_hard_numeric_identifiers
+
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # 1. v12 == version 12
+    assert extract_hard_numeric_identifiers("Tesla releases FSD v12") == {"version:12"}
+    assert extract_hard_numeric_identifiers("Tesla releases FSD version 12") == {"version:12"}
+
+    # 2. v12 == ver 12
+    assert extract_hard_numeric_identifiers("Tesla releases FSD ver 12") == {"version:12"}
+    assert extract_hard_numeric_identifiers("Tesla releases FSD ver. 12") == {"version:12"}
+    assert extract_hard_numeric_identifiers("Tesla releases FSD software version 12") == {"version:12"}
+
+    # 3. v12 != v13
+    assert extract_hard_numeric_identifiers("Tesla releases FSD v12") != extract_hard_numeric_identifiers("Tesla releases FSD v13")
+
+    # 4. update 12 != update 13
+    assert extract_hard_numeric_identifiers("Tesla releases FSD update 12") == {"version:12"}
+    assert extract_hard_numeric_identifiers("Tesla releases FSD update 13") == {"version:13"}
+    assert extract_hard_numeric_identifiers("Tesla releases FSD update 12") != extract_hard_numeric_identifiers("Tesla releases FSD update 13")
+
+    # 5. Equivalent formatting must NOT split the same event
+    art_v12 = Article(
+        title="Tesla releases Full Self-Driving v12 update to customers",
+        url="https://reuters.com/fsd-v12",
+        source="Reuters",
+        published_at=dt,
+        entities=["Tesla"],
+    )
+    art_ver12 = Article(
+        title="Tesla rolls out Full Self-Driving version 12 to vehicle owners",
+        url="https://autonews.com/fsd-ver12",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Tesla"],
+    )
+    art_upd12 = Article(
+        title="Tesla releases Full Self-Driving update 12 to vehicle owners",
+        url="https://electrek.co/fsd-upd12",
+        source="Electrek",
+        published_at=dt,
+        entities=["Tesla"],
+    )
+    art_v13 = Article(
+        title="Tesla releases Full Self-Driving v13 update to customers",
+        url="https://reuters.com/fsd-v13",
+        source="Reuters",
+        published_at=dt,
+        entities=["Tesla"],
+    )
+
+    # v12 vs version 12: must merge
+    is_same_12, sim_12 = are_articles_same_event(art_v12, art_ver12)
+    assert is_same_12, f"Expected v12 and version 12 to merge, got sim={sim_12}"
+    assert sim_12 >= 0.70
+
+    # v12 vs update 12: must merge
+    is_same_upd, sim_upd = are_articles_same_event(art_v12, art_upd12)
+    assert is_same_upd, f"Expected v12 and update 12 to merge, got sim={sim_upd}"
+    assert sim_upd >= 0.65
+
+    # v12 vs v13: must strictly separate (0.0)
+    assert calculate_event_similarity(art_v12, art_v13) == 0.0
+    assert are_articles_same_event(art_v12, art_v13)[0] is False
+
+    # 6. NHTSA Recall Campaign IDs parser
+    assert extract_hard_numeric_identifiers("NHTSA issues recall 24V-123 for Ford trucks") == {"campaign:24v123"}
+    assert extract_hard_numeric_identifiers("Ford truck recall under campaign 24V123") == {"campaign:24v123"}
+    assert extract_hard_numeric_identifiers("Ford truck recall under campaign 24V-456") == {"campaign:24v456"}
+
+    # 7. Arbitrary quantities remain soft numeric attributes (not hard identifiers)
+    assert extract_hard_numeric_identifiers("Ford invests $2B in battery plant") == set()
+    assert extract_hard_numeric_identifiers("Ford invests $5B in battery plant") == set()
+    assert extract_hard_numeric_identifiers("Automaker recalls 100,000 vehicles") == set()
+    assert extract_hard_numeric_identifiers("Automaker recalls 120,000 vehicles") == set()
+    assert extract_hard_numeric_identifiers("Production targets set for 2026 across 10 plants") == set()
+    assert extract_hard_numeric_identifiers("Production targets set for 2027 across 12 plants") == set()
+
+
+def test_sister_brand_explicit_joint_event_matrix():
+    """Verify sister-brand / parent-group joint event detection matrix.
+
+    Requirements:
+    1. VW restructuring + Audi restructuring -> DIFFERENT
+    2. VW and Audi joint restructuring -> SAME
+    3. VW Group program covering VW and Audi -> SAME
+    4. Hyundai restructuring + Kia restructuring -> DIFFERENT
+    5. Hyundai and Kia joint program -> SAME
+    6. Same parent group but unrelated events -> DIFFERENT
+    """
+    from automotive_newsletter.clustering import has_explicit_joint_event_signal
+
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # 1. VW restructuring + Audi restructuring -> DIFFERENT
+    vw_re = Article(
+        title="Volkswagen announces major European manufacturing restructuring",
+        url="https://reuters.com/vw-re",
+        source="Reuters",
+        published_at=dt,
+        entities=["Volkswagen"],
+    )
+    audi_re = Article(
+        title="Audi announces major European manufacturing restructuring",
+        url="https://autonews.com/audi-re",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Audi"],
+    )
+    assert not has_explicit_joint_event_signal(vw_re, audi_re)
+    assert calculate_event_similarity(vw_re, audi_re) == 0.0
+    assert are_articles_same_event(vw_re, audi_re)[0] is False
+
+    # 2. VW and Audi joint restructuring -> SAME
+    vw_audi_jt1 = Article(
+        title="Volkswagen and Audi announce joint European manufacturing restructuring",
+        url="https://reuters.com/vw-audi-jt1",
+        source="Reuters",
+        published_at=dt,
+        entities=["Volkswagen", "Audi"],
+    )
+    vw_audi_jt2 = Article(
+        title="VW and Audi joint restructuring targets European operations",
+        url="https://autonews.com/vw-audi-jt2",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Volkswagen", "Audi"],
+    )
+    assert has_explicit_joint_event_signal(vw_audi_jt1, vw_audi_jt2)
+    is_same_va, sim_va = are_articles_same_event(vw_audi_jt1, vw_audi_jt2)
+    assert is_same_va, f"Expected VW and Audi joint restructuring to merge, got sim={sim_va}"
+    assert sim_va >= 0.70
+
+    # 3. VW Group program covering VW and Audi -> SAME
+    vw_grp1 = Article(
+        title="Volkswagen Group restructuring program covers VW and Audi",
+        url="https://reuters.com/vw-grp1",
+        source="Reuters",
+        published_at=dt,
+        entities=["Volkswagen", "Audi"],
+    )
+    vw_grp2 = Article(
+        title="VW and Audi included in Volkswagen Group-wide restructuring program",
+        url="https://autonews.com/vw-grp2",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Volkswagen", "Audi"],
+    )
+    assert has_explicit_joint_event_signal(vw_grp1, vw_grp2)
+    is_same_grp, sim_grp = are_articles_same_event(vw_grp1, vw_grp2)
+    assert is_same_grp, f"Expected VW Group program covering both brands to merge, got sim={sim_grp}"
+    assert sim_grp >= 0.70
+
+    # 4. Hyundai restructuring + Kia restructuring -> DIFFERENT
+    hyundai_re = Article(
+        title="Hyundai Motor announces workforce restructuring across plants",
+        url="https://reuters.com/hyundai-re",
+        source="Reuters",
+        published_at=dt,
+        entities=["Hyundai"],
+    )
+    kia_re = Article(
+        title="Kia announces workforce restructuring across plants",
+        url="https://autonews.com/kia-re",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Kia"],
+    )
+    assert not has_explicit_joint_event_signal(hyundai_re, kia_re)
+    assert calculate_event_similarity(hyundai_re, kia_re) == 0.0
+    assert are_articles_same_event(hyundai_re, kia_re)[0] is False
+
+    # 5. Hyundai and Kia joint program -> SAME
+    hk_jt1 = Article(
+        title="Hyundai and Kia announce joint next-generation SDV software platform",
+        url="https://reuters.com/hk-jt1",
+        source="Reuters",
+        published_at=dt,
+        entities=["Hyundai", "Kia"],
+    )
+    hk_jt2 = Article(
+        title="Kia and Hyundai unveil new joint SDV software platform",
+        url="https://autonews.com/hk-jt2",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Kia", "Hyundai"],
+    )
+    assert has_explicit_joint_event_signal(hk_jt1, hk_jt2)
+    is_same_hk, sim_hk = are_articles_same_event(hk_jt1, hk_jt2)
+    assert is_same_hk, f"Expected Hyundai and Kia joint SDV to merge, got sim={sim_hk}"
+    assert sim_hk >= 0.70
+
+    # 6. Same parent group but unrelated events -> DIFFERENT
+    h_sdv = Article(
+        title="Hyundai Motor announces next-generation SDV architecture for 2026",
+        url="https://reuters.com/h-sdv",
+        source="Reuters",
+        published_at=dt,
+        entities=["Hyundai"],
+    )
+    k_info = Article(
+        title="Kia reveals new software-driven infotainment experience for EV3",
+        url="https://autonews.com/k-info",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Kia"],
+    )
+    assert not has_explicit_joint_event_signal(h_sdv, k_info)
+    assert calculate_event_similarity(h_sdv, k_info) == 0.0
+    assert are_articles_same_event(h_sdv, k_info)[0] is False
+
+
 
 
 

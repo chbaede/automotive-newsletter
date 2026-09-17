@@ -490,3 +490,66 @@ def test_expanded_publisher_contamination_regression():
         assert expected_oem in entities, f"Expected {expected_oem} from {source_name}, got {entities}"
 
 
+def test_explicit_article_entities_additive_evidence():
+    """Verify that structured article.entities contribute additive canonical entities safely."""
+    from automotive_newsletter.entity_registry import (
+        extract_canonical_entities,
+        extract_entity_matches,
+    )
+
+    # 1. Title BMW + structured Qualcomm/Nvidia entities both survive
+    art_additive = Article(
+        title="BMW announces new automated driving platform",
+        url="https://example.com/bmw-platform",
+        source="Reuters",
+        publisher="Reuters",
+        entities=["BMW", "Qualcomm", "Nvidia"],
+    )
+    entities = extract_canonical_entities(art_additive)
+    assert entities == {"bmw", "qualcomm", "nvidia"}
+
+    # Provenance and confidence check
+    matches = extract_entity_matches(art_additive)
+    bmw_m = next(m for m in matches if m.entity == "bmw")
+    assert bmw_m.source == "title"
+    assert bmw_m.confidence == 1.0
+
+    qc_m = next(m for m in matches if m.entity == "qualcomm")
+    assert qc_m.source == "explicit_article_entity"
+    assert qc_m.confidence == 0.95
+
+    nv_m = next(m for m in matches if m.entity == "nvidia")
+    assert nv_m.source == "explicit_article_entity"
+    assert nv_m.confidence == 0.95
+
+    # 2. Media publisher entities in structured entities are filtered
+    art_media = Article(
+        title="BMW announces new automated driving platform",
+        url="https://example.com/bmw-media",
+        source="Reuters",
+        publisher="Reuters",
+        entities=["BMW", "Reuters", "Bloomberg", "WardsAuto"],
+    )
+    assert extract_canonical_entities(art_media) == {"bmw"}
+
+    # 3. Arbitrary non-canonical entity strings are safely ignored
+    art_arbitrary = Article(
+        title="BMW announces new automated driving platform",
+        url="https://example.com/bmw-arbitrary",
+        source="Reuters",
+        publisher="Reuters",
+        entities=["BMW", "NonExistentCompanyXYZ", "some_random_string"],
+    )
+    assert extract_canonical_entities(art_arbitrary) == {"bmw"}
+
+    # 4. Existing title/excerpt behavior remains unchanged when article.entities is empty
+    art_plain = Article(
+        title="Toyota announces new battery factory in North Carolina",
+        url="https://example.com/toyota-plain",
+        source="Reuters",
+        publisher="Reuters",
+        excerpt="The Japanese automaker invests heavily in battery cells.",
+    )
+    assert extract_canonical_entities(art_plain) == {"toyota"}
+
+

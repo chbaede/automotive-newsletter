@@ -293,40 +293,191 @@ def extract_stemmed_tokens(text: str) -> set[str]:
     }
 
 
-JOINT_EVENT_TERMS: set[str] = {
+EXPLICIT_JOINT_PHRASES: set[str] = {
     "joint",
     "jointly",
     "together",
-    "group-wide",
-    "groupwide",
-    "parent company initiative",
-    "shared platform",
+    "shared",
+    "common",
+    "unified",
     "joint venture",
-    "jointly announced",
+    "co-development",
+    "co-develop",
     "same program",
     "same restructuring program",
     "same recall campaign",
-    "co-develop",
-    "co-development",
-    "collaborative",
+    "group-wide",
+    "groupwide",
+    "parent company initiative",
+    "jointly announced",
+    "shared platform",
     "unified platform",
     "common platform",
+    "collaborative",
 }
 
-HARD_NUMERIC_PATTERNS: list[re.Pattern] = [
-    re.compile(r"\bv\d+(?:\.\d+)*\b", re.I),
-    re.compile(r"\b\d{2}[vV][-_]?\d+\b", re.I),
-    re.compile(r"\b(?:update|part|phase|stage|round|version|ver|step)\s*[-_]?\s*(\d+)\b", re.I),
+JOINT_EVENT_TERMS: set[str] = EXPLICIT_JOINT_PHRASES
+
+# Explicit cross-brand subject construction patterns for sister brands under shared parent groups
+SISTER_BRAND_SUBJECT_PATTERNS: list[re.Pattern] = [
+    # Volkswagen Group
+    re.compile(r"\b(?:volkswagen|vw)\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:audi|porsche|seat|skoda)\b", re.I),
+    re.compile(r"\b(?:audi|porsche|seat|skoda)\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:volkswagen|vw)\b", re.I),
+    re.compile(r"\bboth\s+(?:volkswagen|vw)\s+and\s+(?:audi|porsche|seat|skoda)\b", re.I),
+    re.compile(r"\bboth\s+(?:audi|porsche|seat|skoda)\s+and\s+(?:volkswagen|vw)\b", re.I),
+    # Hyundai Motor Group
+    re.compile(r"\bhyundai\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:kia|genesis)\b", re.I),
+    re.compile(r"\bkia\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:hyundai|genesis)\b", re.I),
+    re.compile(r"\bboth\s+hyundai\s+and\s+kia\b", re.I),
+    re.compile(r"\bboth\s+kia\s+and\s+hyundai\b", re.I),
+    # BMW Group
+    re.compile(r"\bbmw\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:mini|rolls[- ]royce)\b", re.I),
+    re.compile(r"\bmini\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:bmw|rolls[- ]royce)\b", re.I),
+    re.compile(r"\bboth\s+bmw\s+and\s+mini\b", re.I),
+    # Toyota Group
+    re.compile(r"\btoyota\s+(?:and|&|\+|with|,)\s+(?:both\s+)?lexus\b", re.I),
+    re.compile(r"\blexus\s+(?:and|&|\+|with|,)\s+(?:both\s+)?toyota\b", re.I),
+    re.compile(r"\bboth\s+toyota\s+and\s+lexus\b", re.I),
+    # Stellantis
+    re.compile(r"\b(?:peugeot|citroen|fiat|jeep|chrysler|dodge|ram)\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:peugeot|citroen|fiat|jeep|chrysler|dodge|ram)\b", re.I),
 ]
+
+# Explicit parent-program construction patterns
+PARENT_PROGRAM_PATTERNS: list[re.Pattern] = [
+    re.compile(r"\b(?:volkswagen|vw)\s+group\b.*?\b(?:covers?|affect(?:s|ed|ing)?|appl(?:ies|y)|includes?)\b.*?\b(?:both\s+)?(?:volkswagen|vw|audi|porsche)\b", re.I),
+    re.compile(r"\bhyundai(?:\s+motor)?\s+group\b.*?\b(?:covers?|affect(?:s|ed|ing)?|appl(?:ies|y)|includes?)\b.*?\b(?:both\s+)?(?:hyundai|kia)\b", re.I),
+    re.compile(r"\b(?:the\s+)?same\s+group[- ]wide\s+(?:program|initiative|restructuring|recall)\b", re.I),
+    re.compile(r"\bgroup[- ]wide\s+(?:program|initiative|restructuring|recall|platform)\s+(?:covers?|affect(?:s|ed|ing)?|appl(?:ies|y)|includes?|for)\b", re.I),
+    re.compile(r"\b(?:covers?|affect(?:s|ed|ing)?|appl(?:ies|y)|includes?)\s+both\s+\w+\s+and\s+\w+\b", re.I),
+]
+
+SHARED_INITIATIVE_PHRASES: set[str] = {
+    "same program",
+    "same restructuring program",
+    "same recall campaign",
+    "parent company initiative",
+    "group-wide initiative",
+    "group-wide program",
+    "group-wide restructuring",
+    "the same joint program",
+}
+
+
+def has_explicit_joint_event_signal(
+    a1: Article | None = None,
+    a2: Article | None = None,
+    f1: ArticleClusteringFeatures | None = None,
+    f2: ArticleClusteringFeatures | None = None,
+    text1: str | None = None,
+    text2: str | None = None,
+) -> bool:
+    """Determine whether two articles share explicit joint-event, cross-brand, or parent-program signals.
+
+    SAME PARENT GROUP ALONE IS NEVER SUFFICIENT.
+    Requires at least one of:
+    A. Explicit joint phrases (e.g. 'jointly', 'shared platform', 'same restructuring program')
+    B. Explicit cross-brand subject construction (e.g. 'Volkswagen and Audi', 'Hyundai and Kia')
+    C. Explicit parent-program construction (e.g. 'Volkswagen Group restructuring covers VW and Audi')
+    """
+    t1 = text1 if text1 is not None else ((f1.text if f1 else (extract_clustering_features(a1).text if a1 else "")).lower())
+    t2 = text2 if text2 is not None else ((f2.text if f2 else (extract_clustering_features(a2).text if a2 else "")).lower())
+
+    combined = f"{t1} {t2}"
+
+    # Check C: Explicit parent-program construction
+    if any(p.search(t1) or p.search(t2) for p in PARENT_PROGRAM_PATTERNS):
+        return True
+
+    # Check B: Explicit cross-brand subject construction
+    has_cross_brand = any(p.search(t1) or p.search(t2) for p in SISTER_BRAND_SUBJECT_PATTERNS)
+    has_joint_phrase = any(term in t1 or term in t2 for term in EXPLICIT_JOINT_PHRASES)
+
+    if has_cross_brand and (has_joint_phrase or any(p.search(combined) for p in PARENT_PROGRAM_PATTERNS)):
+        return True
+    if has_cross_brand and any(w in combined for w in ("restructur", "platform", "recall", "sdv", "software")):
+        return True
+
+    # Check A: Both articles explicitly describe the same joint initiative
+    if any(phrase in t1 for phrase in SHARED_INITIATIVE_PHRASES) and any(phrase in t2 for phrase in SHARED_INITIATIVE_PHRASES):
+        return True
+    if any(phrase in t1 or phrase in t2 for phrase in SHARED_INITIATIVE_PHRASES) and has_joint_phrase:
+        return True
+
+    return False
+
+
+# Rigid Hard Numeric Identifiers
+VERSION_PATTERN = re.compile(
+    r"\b(?:software\s+)?(?:version|ver\.?|update|release|v)\s*[-_]?\s*(\d+(?:\.\d+)*)\b",
+    re.IGNORECASE,
+)
+ENGINE_CYLINDER_PATTERN = re.compile(
+    r"\bv[-_]?(6|8|10|12|16)\s*(?:cylinder|engine|biturbo|twin[- ]turbo|motor|powertrain)\b",
+    re.IGNORECASE,
+)
+GEN_HARD_PATTERN = re.compile(
+    r"\b(?:gen|generation)\s*[-_]?\s*(\d+)\b",
+    re.IGNORECASE,
+)
+EURO_HARD_PATTERN = re.compile(
+    r"\beuro\s*[-_]?\s*(\d+[a-z]?)\b",
+    re.IGNORECASE,
+)
+PHASE_HARD_PATTERN = re.compile(
+    r"\b(phase|stage|part|step|round)\s*[-_]?\s*(\d+)\b",
+    re.IGNORECASE,
+)
+NHTSA_CAMPAIGN_PATTERN = re.compile(
+    r"\b(\d{2}[vVecEtT])[-_]?(\d{3,4})\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_version_num(num_str: str) -> str:
+    """Normalize version numbers e.g. '12.0' -> '12', '12' -> '12', '12.3' -> '12.3'."""
+    parts = num_str.split(".")
+    if len(parts) == 2 and parts[1] == "0":
+        return parts[0]
+    return num_str
 
 
 def extract_hard_numeric_identifiers(text: str) -> set[str]:
-    """Extract rigid identifiers like software versions (v12, v13), NHTSA recall IDs, or sequential updates."""
-    results = set()
+    """Extract normalized rigid identifiers like software versions, generations, NHTSA campaign IDs, or sequential phases."""
+    results: set[str] = set()
     text_lower = text.lower()
-    for p in HARD_NUMERIC_PATTERNS:
-        for m in p.finditer(text_lower):
-            results.add(m.group(0).replace(" ", "_").replace("-", "_"))
+
+    # 1. Engine cylinder configuration check (e.g. V8 engine vs V12 engine)
+    engine_matches = set()
+    for m in ENGINE_CYLINDER_PATTERN.finditer(text_lower):
+        results.add(f"engine:v{m.group(1)}")
+        engine_matches.add(m.start())
+
+    # 2. Software versions & updates (v12, version 12, ver 12, update 12 -> version:12)
+    for m in VERSION_PATTERN.finditer(text_lower):
+        if m.start() in engine_matches:
+            continue
+        prefix_slice = text_lower[max(0, m.start() - 15) : m.start()]
+        if "twin-turbo" in prefix_slice or "biturbo" in prefix_slice:
+            continue
+        norm_v = _normalize_version_num(m.group(1))
+        results.add(f"version:{norm_v}")
+
+    # 3. Generation numbers (generation 2, gen 2, gen2 -> generation:2)
+    for m in GEN_HARD_PATTERN.finditer(text_lower):
+        results.add(f"generation:{m.group(1)}")
+
+    # 4. Euro emissions standards (Euro 6, Euro-6, Euro 7 -> euro:6, euro:7)
+    for m in EURO_HARD_PATTERN.finditer(text_lower):
+        results.add(f"euro:{m.group(1)}")
+
+    # 5. Sequential phases / stages / parts (phase 1, stage 2 -> phase:1, stage:2)
+    for m in PHASE_HARD_PATTERN.finditer(text_lower):
+        results.add(f"{m.group(1)}:{m.group(2)}")
+
+    # 6. NHTSA recall campaign IDs (24V-123, 24V123 -> campaign:24v123)
+    for m in NHTSA_CAMPAIGN_PATTERN.finditer(text_lower):
+        results.add(f"campaign:{m.group(1)}{m.group(2)}")
+
     return results
 
 
@@ -477,12 +628,10 @@ def calculate_event_similarity(
         # Distinct brands under the same parent group (e.g. Hyundai vs Kia, VW vs Audi):
         # MUST remain separate events unless there is explicit joint-event evidence
         # AND shared theme + substantial token overlap.
-        t1_lower = f1.text.lower()
-        t2_lower = f2.text.lower()
-        has_explicit_joint_signal = any(term in t1_lower or term in t2_lower for term in JOINT_EVENT_TERMS)
+        if not has_explicit_joint_event_signal(a1, a2, f1, f2):
+            return 0.0
         has_strong_joint_signal = (
-            has_explicit_joint_signal
-            and has_theme_overlap
+            has_theme_overlap
             and len(inter) >= 3
             and (jaccard >= 0.40 or containment >= 0.60)
         )
@@ -494,12 +643,10 @@ def calculate_event_similarity(
         if not (p1 and p2 and (p1 & p2)):
             return 0.0
 
-        t1_lower = f1.text.lower()
-        t2_lower = f2.text.lower()
-        has_explicit_joint_signal = any(term in t1_lower or term in t2_lower for term in JOINT_EVENT_TERMS)
+        if not has_explicit_joint_event_signal(a1, a2, f1, f2):
+            return 0.0
         has_strong_joint_signal = (
-            has_explicit_joint_signal
-            and has_theme_overlap
+            has_theme_overlap
             and len(inter) >= 3
             and (jaccard >= 0.40 or containment >= 0.60)
         )

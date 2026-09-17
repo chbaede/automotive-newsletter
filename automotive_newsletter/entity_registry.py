@@ -453,47 +453,54 @@ def extract_entity_matches(article: Article) -> list[EntityMatch]:
                 matches.append(EntityMatch(entity=cid, source="title", confidence=1.0))
                 seen_entities.add(cid)
 
-    # 2. Explicit tags
+    # 2. Explicit structured article entities (additive evidence)
+    if article.entities:
+        for ent in article.entities:
+            if not isinstance(ent, str):
+                continue
+            cid = canonical_entity(ent)
+            if not cid or cid in seen_entities or cid in MEDIA_PUBLISHERS:
+                continue
+            # Avoid polluting an already identified operating brand with its parent corporate group
+            is_parent_of_seen = any(
+                parent_group(seen) and (cid in parent_group(seen).lower() or cid.replace("_", " ") in parent_group(seen).lower())
+                for seen in seen_entities
+            )
+            if is_parent_of_seen:
+                continue
+            matches.append(EntityMatch(entity=cid, source="explicit_article_entity", confidence=0.95))
+            seen_entities.add(cid)
+
+    # 3. Explicit tags
     if article.tags:
         tags_text = " ".join(article.tags)
         for alias in sorted_aliases:
             cid = CANONICAL_ENTITY_MAP[alias]
-            if cid in seen_entities:
+            if cid in seen_entities or cid in MEDIA_PUBLISHERS:
                 continue
             if contains_alias(tags_text, alias, raw_text=tags_text):
-                if cid not in MEDIA_PUBLISHERS:
-                    matches.append(EntityMatch(entity=cid, source="explicit_article_entity", confidence=1.0))
-                    seen_entities.add(cid)
+                matches.append(EntityMatch(entity=cid, source="explicit_article_entity", confidence=0.95))
+                seen_entities.add(cid)
 
-    # 3. RSS summary / excerpt
+    # 4. RSS summary / excerpt
     if article.excerpt:
         for alias in sorted_aliases:
             cid = CANONICAL_ENTITY_MAP[alias]
-            if cid in seen_entities:
+            if cid in seen_entities or cid in MEDIA_PUBLISHERS:
                 continue
             if contains_alias(article.excerpt, alias, raw_text=article.excerpt):
-                if cid not in MEDIA_PUBLISHERS:
-                    matches.append(EntityMatch(entity=cid, source="rss_summary", confidence=0.9))
-                    seen_entities.add(cid)
+                matches.append(EntityMatch(entity=cid, source="rss_summary", confidence=0.9))
+                seen_entities.add(cid)
 
-    # 4. Fallback: bounded content (first 1500 characters) if no entities found yet
+    # 5. Content fallback: bounded content (first 1500 characters) if no entities found yet
     if not seen_entities and article.content:
         bounded_content = article.content[:1500]
         for alias in sorted_aliases:
             cid = CANONICAL_ENTITY_MAP[alias]
-            if cid in seen_entities:
+            if cid in seen_entities or cid in MEDIA_PUBLISHERS:
                 continue
             if contains_alias(bounded_content, alias, raw_text=bounded_content):
-                if cid not in MEDIA_PUBLISHERS:
-                    matches.append(EntityMatch(entity=cid, source="content", confidence=0.8))
-                    seen_entities.add(cid)
-
-    # 5. Fallback: explicit article.entities only if not found yet
-    if not seen_entities and article.entities:
-        for ent in article.entities:
-            cid = canonical_entity(ent)
-            if cid and cid not in seen_entities and cid not in MEDIA_PUBLISHERS:
-                matches.append(EntityMatch(entity=cid, source="explicit_article_entity", confidence=0.95))
+                matches.append(EntityMatch(entity=cid, source="content", confidence=0.8))
                 seen_entities.add(cid)
 
     # 6. Official newsroom publisher attribution
