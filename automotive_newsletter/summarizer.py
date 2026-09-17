@@ -12,79 +12,17 @@ import httpx
 from .models import Article
 from .prompts import SUMMARIZATION_SYSTEM_PROMPT, build_user_prompt
 from .scoring import compute_multi_dimensional_scores
-from .taxonomy import CATEGORY_LABELS_EN, classify_taxonomy
+from .taxonomy import (
+    CATEGORY_LABELS_EN,
+    CONFERENCE_NAMES,
+    INSTITUTION_NAMES,
+    OEM_NAMES,
+    TIER1_NAMES,
+    classify_taxonomy,
+)
 
 logger = logging.getLogger(__name__)
 
-
-OEM_NAMES = [
-    "Toyota",
-    "Volkswagen",
-    "Hyundai",
-    "Kia",
-    "GM",
-    "General Motors",
-    "Ford",
-    "Stellantis",
-    "BMW",
-    "Mercedes",
-    "Mercedes-Benz",
-    "Tesla",
-    "BYD",
-    "Honda",
-    "Nissan",
-    "Renault",
-    "Rivian",
-    "Lucid",
-    "Mazda",
-    "Subaru",
-]
-
-TIER1_NAMES = [
-    "Bosch",
-    "Continental",
-    "Denso",
-    "Magna",
-    "ZF",
-    "Aptiv",
-    "Valeo",
-    "Forvia",
-    "Hyundai Mobis",
-    "CATL",
-    "LG Energy Solution",
-    "Panasonic",
-    "Mobileye",
-    "Nvidia",
-    "Qualcomm",
-    "NXP",
-    "Renesas",
-    "Infineon",
-]
-
-INSTITUTION_NAMES = [
-    "SAE",
-    "S&P Global Mobility",
-    "McKinsey",
-    "Gartner",
-    "WardsAuto",
-    "Automotive News",
-    "J.D. Power",
-    "Cox Automotive",
-    "Reuters",
-    "Bloomberg",
-]
-
-CONFERENCE_NAMES = [
-    "IAA Mobility",
-    "CES",
-    "SAE WCX",
-    "Auto Shanghai",
-    "Japan Mobility Show",
-    "Automotive World Tokyo",
-    "Automotive World Nagoya",
-    "TU-Automotive",
-    "AutoTech",
-]
 
 SDV_TERMS = [
     "software-defined",

@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block body %}
 <div class="app-shell">
-  <aside class="history-rail">
-    <a href="https://main.yocto.co.kr/" class="hub-backlink" target="_blank" rel="noopener noreferrer">
+  <aside class="history-rail google-anno-skip">
+    <a href="https://main.yocto.co.kr/" class="hub-backlink google-anno-skip" target="_blank" rel="noopener noreferrer">
       <i data-lucide="arrow-left"></i>
       <span>
         <span class="lang-ko">Yocto 허브 메인</span>
@@ -10,10 +10,10 @@
       </span>
       <i data-lucide="external-link" style="width: 11px; height: 11px; opacity: 0.6;"></i>
     </a>
-    <div class="brand">
-      <span class="brand-mark">AN</span>
+    <div class="brand google-anno-skip">
+      <span class="brand-mark" title="클릭하여 관리자 모드 전환">AN</span>
       <div>
-        <h1>
+        <h1 class="google-anno-skip">
           <span class="lang-ko">Automotive 뉴스레터</span>
           <span class="lang-en" style="display:none;">Automotive Newsletter</span>
         </h1>
@@ -367,30 +367,31 @@
               <span data-section-count>{{ section.articles|length }}<span class="lang-ko">건</span><span class="lang-en" style="display:none;"> items</span></span>
             </div>
             <div class="article-grid">
-              {% for article in section.articles %}
-                {% set priority = assess_priority(article) %}
-                {% set source_url = display_url(article) %}
-                {% set article_regions = regions_for_article(article) %}
-                {% set coverage = display_event_coverage(article) %}
-                {% set pub_time = display_published_time(article) %}
-                {% set why_ko = display_why_it_matters_ko(article) %}
-                {% set why_en = display_why_it_matters_en(article) %}
-                {% set fact_ko = display_factual_summary_ko(article) %}
-                {% set fact_en = display_factual_summary_en(article) %}
-                {% set st_type = canonical_source_type(article) %}
+              {% for card in section.article_views %}
+                {% set article = card.article %}
+                {% set priority = card.priority %}
+                {% set source_url = card.source_url %}
+                {% set article_regions = card.regions %}
+                {% set coverage = card.coverage %}
+                {% set pub_time = card.published_time %}
+                {% set why_ko = card.why_it_matters_ko %}
+                {% set why_en = card.why_it_matters_en %}
+                {% set fact_ko = card.factual_summary_ko %}
+                {% set fact_en = card.factual_summary_en %}
+                {% set st_type = card.source_type %}
                 <article
                   class="article-card article-card--{{ priority.level }}"
                   data-priority="{{ priority.level }}"
-                  data-regions="{% for region in article_regions %}{{ region.key }}{% if not loop.last %} {% endif %}{% endfor %}"
-                  data-filter-regions="{{ ' '.join(all_region_keys_for_article(article)) }}"
-                  data-topics="{{ ' '.join(topic_keys_for_article(article)) }}"
+                  data-regions="{{ ' '.join(card.region_keys) }}"
+                  data-filter-regions="{{ ' '.join(card.all_region_keys) }}"
+                  data-topics="{{ ' '.join(card.topic_keys) }}"
                   data-source-type="{{ st_type }}"
                 >
                   <div class="article-card__top">
                     <div class="article-source-group">
                       <span class="category-badge">
-                        <span class="lang-ko">{{ display_primary_category(article, 'ko') }}</span>
-                        <span class="lang-en" style="display:none;">{{ display_primary_category(article, 'en') }}</span>
+                        <span class="lang-ko">{{ card.primary_category_ko }}</span>
+                        <span class="lang-en" style="display:none;">{{ card.primary_category_en }}</span>
                       </span>
                       <span class="source-type-pill source-type-pill--{{ st_type }}">
                         {% if st_type == 'official' %}
@@ -415,7 +416,7 @@
                           <span class="lang-en" style="display:none;">Media</span>
                         {% endif %}
                       </span>
-                      <span class="source-name">{{ article.publisher or article.source }}</span>
+                      <span class="source-name">{{ card.publisher_display }}</span>
                       {% if pub_time %}
                         <time class="published-time">{{ pub_time }}</time>
                       {% endif %}
@@ -438,12 +439,12 @@
                   <h4>
                     {% if source_url %}
                       <a href="{{ source_url }}" target="_blank" rel="noreferrer" class="article-title-link">
-                        <span class="lang-ko">{{ display_title_ko(article) }}</span>
-                        <span class="lang-en" style="display:none;">{{ display_title_en(article) }}</span>
+                        <span class="lang-ko">{{ card.title_ko }}</span>
+                        <span class="lang-en" style="display:none;">{{ card.title_en }}</span>
                       </a>
                     {% else %}
-                      <span class="lang-ko">{{ display_title_ko(article) }}</span>
-                      <span class="lang-en" style="display:none;">{{ display_title_en(article) }}</span>
+                      <span class="lang-ko">{{ card.title_ko }}</span>
+                      <span class="lang-en" style="display:none;">{{ card.title_en }}</span>
                     {% endif %}
                   </h4>
 
@@ -472,7 +473,7 @@
                     <div class="event-cluster-box">
                       <div class="event-cluster-header">
                         <i data-lucide="git-branch"></i>
-                        <strong class="event-cluster-title">{{ coverage.event_title or display_title_en(article) }}</strong>
+                        <strong class="event-cluster-title">{{ coverage.event_title or card.title_en }}</strong>
                       </div>
                       <div class="event-cluster-badges">
                         <span class="coverage-badge" title="{{ coverage.label_en }}">
@@ -513,13 +514,12 @@
                     </div>
                   {% endif %}
 
-                  {% set user_tags = visible_tags(article) %}
-                  {% if user_tags or article.topics %}
+                  {% if card.user_tags or article.topics %}
                     <div class="tags">
                       {% for top in article.topics %}
                         <span class="tag-topic">{{ top }}</span>
                       {% endfor %}
-                      {% for tag in user_tags %}
+                      {% for tag in card.user_tags %}
                         <span>{{ tag }}</span>
                       {% endfor %}
                     </div>

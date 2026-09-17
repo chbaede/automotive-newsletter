@@ -237,3 +237,56 @@ def test_build_intelligence_sections():
     assert st_counts["official"] == 1
     assert st_counts["media"] == 1
 
+
+def test_compute_issue_metrics_and_prepare_article_view():
+    from automotive_newsletter.presentation import (
+        ArticleView,
+        compute_issue_metrics,
+        prepare_article_view,
+    )
+
+    art1 = Article(
+        title="BMW reveals new electric sedan",
+        url="https://example.com/bmw",
+        source="Reuters",
+        category="ev_battery",
+        relevance_score=85.0,
+        impact_score=85.0,
+        priority_score=85.0,
+    )
+    art2 = Article(
+        title="Bosch shows steering module",
+        url="https://example.com/bosch",
+        source="Bosch Press",
+        category="tier1",
+        relevance_score=65.0,
+        impact_score=65.0,
+        priority_score=65.0,
+    )
+    art3 = Article(
+        title="AutoTech Detroit 2026",
+        url="https://example.com/conf",
+        source="Conference Site",
+        category="conference",
+        relevance_score=50.0,
+        impact_score=50.0,
+        priority_score=50.0,
+    )
+
+    articles = [art1, art2, art3]
+    metrics = compute_issue_metrics(articles)
+    assert metrics["total"] == 3
+    assert metrics["critical"] == 1
+    assert metrics["high"] == 1
+    assert metrics["conference"] == 1
+
+    # Verify ArticleView precalculation
+    view1 = prepare_article_view(art1)
+    assert isinstance(view1, ArticleView)
+    assert view1.article is art1
+    assert view1.priority.level == "critical"
+    assert view1.source_url == "https://example.com/bmw"
+    assert view1.publisher_display == "Reuters"
+    assert "ev_battery" in view1.topic_keys or len(view1.primary_category_ko) > 0
+
+

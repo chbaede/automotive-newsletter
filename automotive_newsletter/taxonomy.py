@@ -175,6 +175,30 @@ CONFERENCE_ENTITIES: dict[str, list[str]] = {
     "Automotive World": ["automotive world", "automotive world tokyo", "automotive world nagoya"],
 }
 
+# Canonical name lists for summarization and tagging
+OEM_NAMES: list[str] = [
+    *list(OEM_ENTITIES.keys()),
+    "General Motors",
+]
+
+TIER1_NAMES: list[str] = [
+    *list(TIER1_ENTITIES.keys()),
+]
+
+INSTITUTION_NAMES: list[str] = [
+    *list(INSTITUTION_ENTITIES.keys()),
+    "Reuters",
+    "Bloomberg",
+]
+
+CONFERENCE_NAMES: list[str] = [
+    *list(CONFERENCE_ENTITIES.keys()),
+    "TU-Automotive",
+    "Automotive World Tokyo",
+    "Automotive World Nagoya",
+]
+
+
 # Topic detection regex patterns and implications
 TOPIC_PATTERNS: list[tuple[str, list[str], list[str]]] = [
     # (Canonical Topic, Patterns, Implied Topics)

@@ -10,17 +10,18 @@
     <meta property="og:title" content="Automotive 뉴스레터">
     <meta property="og:description" content="글로벌 완성차, 부품사, SDV 소프트웨어 및 자동차 컨퍼런스 매일 브리핑">
     <meta property="og:type" content="website">
+    <meta name="google-adsense-platform-account" content="ca-pub-6854824605420161">
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6854824605420161" crossorigin="anonymous"></script>
-    <link rel="stylesheet" href="{{ url_for('static', path='styles.css').path }}?v=20260829-sources">
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css').path }}?v=20260917-ui">
     <script>
       if (localStorage.getItem("preferred_lang") === "en") {
         document.documentElement.classList.add("lang-en-active");
       }
     </script>
     <script defer src="https://unpkg.com/lucide@latest"></script>
-    <script defer src="{{ url_for('static', path='app.js').path }}?v=20260829-sources"></script>
+    <script defer src="{{ url_for('static', path='app.js').path }}?v=20260917-ui"></script>
   </head>
-  <body>
+  <body class="google-anno-skip">
     {% block body %}{% endblock %}
   </body>
 </html>

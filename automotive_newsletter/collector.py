@@ -14,7 +14,7 @@ import feedparser
 import httpx
 from bs4 import BeautifulSoup
 
-from .clustering import cluster_articles, select_primary_article
+from .clustering import STOP_WORDS, cluster_articles, select_primary_article
 from .config import Settings, load_settings
 from .content_extractor import extract_usable_article_text
 from .logging import logger
@@ -40,12 +40,8 @@ TRACKING_PARAMS = {
 }
 REQUEST_HEADERS = {"User-Agent": "AutomotiveNewsletter/0.1 (+local research app)"}
 
-TITLE_STOP_WORDS = {
-    "the", "and", "for", "with", "from", "that", "this", "about", "after",
-    "over", "into", "will", "are", "were", "was", "has", "have", "had",
-    "its", "new", "says", "said", "속보", "단독", "종합", "포토", "영상",
-    "in", "on", "at", "by", "an", "a", "to", "of", "is", "it", "as", "be",
-}
+TITLE_STOP_WORDS = STOP_WORDS | {"속보", "단독", "종합", "포토", "영상"}
+
 
 
 def clean_title_for_comparison(title: str) -> str:

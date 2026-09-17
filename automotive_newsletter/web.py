@@ -26,6 +26,7 @@ from .presentation import (
     all_region_keys_for_article,
     build_intelligence_sections,
     canonical_source_type,
+    compute_issue_metrics,
     display_event_coverage,
     display_factual_summary_en,
     display_factual_summary_ko,
@@ -264,7 +265,7 @@ def _render_index(
             "source_type_keys_for_article": source_type_keys_for_article,
             "visible_tags": visible_tags,
             "mail_settings": _public_mail_settings(settings, store.mail_settings()),
-            "issue_metrics": _issue_metrics(displayed_articles) if issue else {},
+            "issue_metrics": compute_issue_metrics(displayed_articles) if issue else {},
             "warning_items": _warning_items(issue.warnings) if issue else [],
             "priority_summary": priority_summary(
                 NewsletterIssue(
@@ -309,24 +310,6 @@ def _warning_summary(detail: str) -> str:
     if "피드 파싱 실패" in detail:
         return "피드 파싱 실패"
     return "수집 오류"
-
-
-def _issue_metrics(articles: list) -> dict[str, int]:
-    news_articles = [article for article in articles if article.category != "conference"]
-    critical = 0
-    high = 0
-    for article in news_articles:
-        priority = assess_priority(article)
-        if priority.level == "critical":
-            critical += 1
-        elif priority.level == "high":
-            high += 1
-    return {
-        "total": len(articles),
-        "critical": critical,
-        "high": high,
-        "conference": len([article for article in articles if article.category == "conference"]),
-    }
 
 
 def _effective_mail_settings(settings: Settings, store: NewsletterStore) -> Settings:

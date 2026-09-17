@@ -9,6 +9,7 @@ from .models import NewsletterIssue
 from .presentation import (
     build_intelligence_sections,
     canonical_source_type,
+    compute_issue_metrics,
     display_event_coverage,
     display_factual_summary_en,
     display_factual_summary_ko,
@@ -43,7 +44,7 @@ PRIORITY_COLORS = {
 
 def build_email_html(issue: NewsletterIssue, lang: str = "ko") -> str:
     sections = _email_sections(issue, lang=lang)
-    metrics = _email_metrics(sections)
+    metrics = compute_issue_metrics(sections)
     is_en = lang == "en"
     
     preheader = (
@@ -108,8 +109,9 @@ def build_email_html(issue: NewsletterIssue, lang: str = "ko") -> str:
 
 def build_email_text(issue: NewsletterIssue, lang: str = "ko") -> str:
     sections = _email_sections(issue, lang=lang)
-    metrics = _email_metrics(sections)
+    metrics = compute_issue_metrics(sections)
     is_en = lang == "en"
+
     
     lines = [
         f"Automotive Intelligence Brief - {issue.issue_date}",
@@ -202,25 +204,6 @@ def _email_sections(issue: NewsletterIssue, lang: str = "ko") -> list[tuple[str,
         for sec in intel_sections
         if sec["articles"]
     ]
-
-
-def _email_metrics(sections: list[tuple[str, str, list]]) -> dict[str, int]:
-    articles = [article for _, _, items in sections for article in items]
-    news_articles = [article for article in articles if article.category != "conference"]
-    critical = 0
-    high = 0
-    for article in news_articles:
-        priority = assess_priority(article)
-        if priority.level == "critical":
-            critical += 1
-        elif priority.level == "high":
-            high += 1
-    return {
-        "total": len(articles),
-        "critical": critical,
-        "high": high,
-        "conference": len([article for article in articles if article.category == "conference"]),
-    }
 
 
 def _metric_table(metrics: dict[str, int], lang: str = "ko") -> str:

@@ -622,7 +622,111 @@ def build_intelligence_sections(issue: NewsletterIssue, lang: str = "ko") -> lis
             if sec["key"] in {"regulation", "market"}:
                 sec["articles"] = sort_articles_for_section("standard", sec["articles"], issue.issue_date)
 
+    # Attach precomputed ArticleViews for high-performance, clean template rendering
+    for sec in sections:
+        sec["article_views"] = [prepare_article_view(a) for a in sec["articles"]]
+
     return sections
+
+
+@dataclass(frozen=True, slots=True)
+class ArticleView:
+    article: Article
+    priority: Any
+    source_url: str
+    published_time: str
+    regions: list[RegionSignal]
+    region_keys: list[str]
+    all_region_keys: list[str]
+    topic_keys: list[str]
+    source_type: str
+    title_ko: str
+    title_en: str
+    factual_summary_ko: str
+    factual_summary_en: str
+    why_it_matters_ko: str
+    why_it_matters_en: str
+    primary_category_ko: str
+    primary_category_en: str
+    coverage: Any
+    user_tags: list[str]
+    publisher_display: str
+
+
+def prepare_article_view(article: Article) -> ArticleView:
+    priority = assess_priority(article)
+    source_url = display_url(article)
+    pub_time = display_published_time(article)
+    article_regions = regions_for_article(article)
+    region_keys = [r.key for r in article_regions]
+    all_reg_keys = all_region_keys_for_article(article)
+    topics = topic_keys_for_article(article)
+    st_type = canonical_source_type(article)
+    title_ko = display_title_ko(article)
+    title_en = display_title_en(article)
+    fact_ko = display_factual_summary_ko(article)
+    fact_en = display_factual_summary_en(article)
+    why_ko = display_why_it_matters_ko(article)
+    why_en = display_why_it_matters_en(article)
+    cat_ko = display_primary_category(article, "ko")
+    cat_en = display_primary_category(article, "en")
+    coverage = display_event_coverage(article)
+    u_tags = visible_tags(article)
+    publisher = article.publisher or article.source or "출처 미상"
+
+    return ArticleView(
+        article=article,
+        priority=priority,
+        source_url=source_url,
+        published_time=pub_time,
+        regions=article_regions,
+        region_keys=region_keys,
+        all_region_keys=all_reg_keys,
+        topic_keys=topics,
+        source_type=st_type,
+        title_ko=title_ko,
+        title_en=title_en,
+        factual_summary_ko=fact_ko,
+        factual_summary_en=fact_en,
+        why_it_matters_ko=why_ko,
+        why_it_matters_en=why_en,
+        primary_category_ko=cat_ko,
+        primary_category_en=cat_en,
+        coverage=coverage,
+        user_tags=u_tags,
+        publisher_display=publisher,
+    )
+
+
+def compute_issue_metrics(
+    articles_or_sections: list[Article] | list[tuple[str, str, list[Article]]] | list[dict[str, object]]
+) -> dict[str, int]:
+    articles: list[Article] = []
+    if articles_or_sections:
+        first = articles_or_sections[0]
+        if isinstance(first, Article):
+            articles = articles_or_sections  # type: ignore
+        elif isinstance(first, tuple) and len(first) >= 3:
+            articles = [a for _, _, items in articles_or_sections for a in items]  # type: ignore
+        elif isinstance(first, dict) and "articles" in first:
+            articles = [a for sec in articles_or_sections for a in sec.get("articles", [])]  # type: ignore
+
+    news_articles = [article for article in articles if article.category != "conference"]
+    critical = 0
+    high = 0
+    for article in news_articles:
+        priority = assess_priority(article)
+        if priority.level == "critical":
+            critical += 1
+        elif priority.level == "high":
+            high += 1
+    return {
+        "total": len(articles),
+        "critical": critical,
+        "high": high,
+        "conference": len([article for article in articles if article.category == "conference"]),
+    }
+
 
 
 def visible_tags(article: Article) -> list[str]:
