@@ -35,13 +35,17 @@ CORE_SOFTWARE_TOPICS = {
     "cloud",
     "ci/cd",
     "devops",
+    "ev platform",
+    "electric vehicle",
+    "battery",
+    "ev",
 }
 
 # Major impact signal regex patterns
 IMPACT_SIGNALS = {
     "investment": re.compile(r"\b(billion|million|investment|invest|funding|capex|ipo)\b", re.I),
     "platform_launch": re.compile(
-        r"\b(platform launch|new platform|architecture launch|production start|start of production|sop)\b",
+        r"\b(platform launch|new platform|architecture launch|production start|start of production|sop|ev platform|updates?\s+(\w+\s+)?platform)\b",
         re.I,
     ),
     "partnership": re.compile(
@@ -52,12 +56,8 @@ IMPACT_SIGNALS = {
         r"\b(major contract|design win|awarded|billion-dollar deal|multi-year agreement|commercial agreement)\b",
         re.I,
     ),
-    "platform_launch": re.compile(
-        r"\b(platform launch|new platform|architecture launch|production start|start of production|sop|ev platform|updates? platform)\b",
-        re.I,
-    ),
     "production_change": re.compile(
-        r"\b(gigafactory|plant expansion|halt production|production cut|factory closure|retool\w*)\b",
+        r"\b(gigafactory|plant expansion|team expansion|expand\w*|halt production|production cut|factory closure|retool\w*)\b",
         re.I,
     ),
     "regulation": re.compile(
@@ -178,11 +178,7 @@ def compute_relevance_score(article: Article) -> float:
         if t_low in CORE_SOFTWARE_TOPICS:
             matched_software_topics.add(t_low)
 
-    for term in [
-        "sdv", "software-defined", "zonal architecture", "autosar", "ota",
-        "android automotive", "qnx", "yocto", "embedded linux", "cybersecurity",
-        "autonomous driving", "adas", "middleware", "hpc", "vehicle os"
-    ]:
+    for term in CORE_SOFTWARE_TOPICS:
         if re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", text):
             matched_software_topics.add(term)
 
@@ -289,14 +285,34 @@ def compute_multi_dimensional_scores(
     nov = compute_novelty_score(article, past_articles=past_articles)
     rec = compute_recency_score(article, ref_time=ref_time, half_life_hours=half_life_hours)
 
-    # Weighted combination for priority score
-    priority = (
+    # Base weighted combination for priority score
+    base_priority = (
         0.30 * rel
         + 0.25 * imp
         + 0.20 * src
         + 0.15 * rec
         + 0.10 * nov
     )
+
+    # Named synergy signals and penalties for automotive intelligence
+    impact_authority_boost = 0.0
+    software_impact_boost = 0.0
+    low_signal_penalty = 0.0
+
+    # 1. Authoritative Major Impact Signal (major recall, regulatory probe, restructuring by wire/official)
+    if imp >= 65.0 and src >= 85.0:
+        impact_authority_boost = 20.0
+
+    # 2. Strategic Vehicle Software & SDV Deployment Signal
+    if rel >= 80.0 and imp >= 45.0:
+        software_impact_boost = 15.0
+
+    # 3. Low Signal Reference / Generic Fallback Penalty
+    if rel < 40.0 and imp < 40.0:
+        low_signal_penalty = 10.0
+
+    synergy_boost = max(impact_authority_boost, software_impact_boost)
+    priority = base_priority + synergy_boost - low_signal_penalty
     priority = round(max(10.0, min(100.0, priority)), 1)
 
     explanation = build_score_explanation(
@@ -306,6 +322,9 @@ def compute_multi_dimensional_scores(
         novelty_score=nov,
         recency_score=rec,
         priority_score=priority,
+        impact_authority_boost=impact_authority_boost > 0,
+        software_impact_boost=software_impact_boost > 0,
+        low_signal_penalty=low_signal_penalty > 0,
     )
 
     return ScoringResult(
@@ -326,10 +345,25 @@ def build_score_explanation(
     novelty_score: float,
     recency_score: float,
     priority_score: float,
+    impact_authority_boost: bool = False,
+    software_impact_boost: bool = False,
+    low_signal_penalty: bool = False,
 ) -> ScoreExplanation:
     """Produce human-readable explainability rationale without exposing numerical precision."""
     reasons_ko: list[str] = []
     reasons_en: list[str] = []
+
+    has_impact_authority = impact_authority_boost or (impact_score >= 65.0 and source_score >= 85.0)
+    has_software_impact = software_impact_boost or (relevance_score >= 80.0 and impact_score >= 45.0)
+    has_low_signal = low_signal_penalty or (relevance_score < 40.0 and impact_score < 40.0)
+
+    if has_impact_authority:
+        reasons_ko.append("주요 출처의 대형 산업 이슈화 신호")
+        reasons_en.append("High-impact development from authoritative source")
+
+    if has_software_impact:
+        reasons_ko.append("SDV·SW 분야 핵심 협력·배치 이슈")
+        reasons_en.append("Strategic SDV & software initiative")
 
     if relevance_score >= 70.0:
         reasons_ko.append("차량 소프트웨어·SDV 관련성 높음")
@@ -362,6 +396,10 @@ def build_score_explanation(
     elif novelty_score <= 50.0:
         reasons_ko.append("중복 또는 일반 해설 항목")
         reasons_en.append("Previously covered / evergreen content")
+
+    if has_low_signal:
+        reasons_ko.append("관찰 항목 (낮은 관련도·영향도)")
+        reasons_en.append("Watch item (low relevance & impact)")
 
     if not reasons_ko:
         reasons_ko.append("일반 산업 참고 항목")
