@@ -260,30 +260,49 @@ def test_joint_parent_group_initiative_with_strong_signals_merges():
 
 
 def test_disjoint_brands_with_strong_joint_event_merges():
-    """Verify that sister brands with disjoint entities merge if strong joint signals exist."""
+    """Verify that sister brands with disjoint entities merge ONLY if explicit joint signals exist."""
     dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
-    # Volkswagen announces European manufacturing restructuring
-    # Audi announces European manufacturing restructuring (part of same group initiative)
-    a_vw = Article(
+
+    # 1. Without explicit joint signal: sister brands MUST NOT merge
+    a_vw_alone = Article(
         title="Volkswagen announces major European manufacturing restructuring",
         url="https://reuters.com/vw-restructure-europe",
         source="Reuters",
         published_at=dt,
+        entities=["Volkswagen"],
     )
-    a_audi = Article(
+    a_audi_alone = Article(
         title="Audi announces major European manufacturing restructuring",
         url="https://autonews.com/audi-restructure-europe",
         source="Automotive News",
         published_at=dt,
+        entities=["Audi"],
+    )
+    is_same_alone, sim_alone = are_articles_same_event(a_vw_alone, a_audi_alone)
+    assert not is_same_alone
+    assert sim_alone == 0.0
+
+    # 2. With explicit joint signal: sister brands merge
+    a_vw_joint = Article(
+        title="Volkswagen and Audi announce joint European manufacturing restructuring program",
+        url="https://reuters.com/vw-audi-joint",
+        source="Reuters",
+        published_at=dt,
+        entities=["Volkswagen", "Audi"],
+    )
+    a_audi_joint = Article(
+        title="Audi and Volkswagen confirm same restructuring program across European plants",
+        url="https://autonews.com/audi-vw-joint",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Audi", "Volkswagen"],
     )
 
-    # c1 is {'volkswagen'}, c2 is {'audi'} -> disjoint brands under same parent group
-    # but tokens overlap strongly (5 tokens) and same restructuring theme
-    is_same, sim = are_articles_same_event(a_vw, a_audi)
+    is_same, sim = are_articles_same_event(a_vw_joint, a_audi_joint)
     assert is_same
-    assert sim > 0.5
+    assert sim >= 0.65
 
-    events, _, _ = cluster_articles([a_vw, a_audi])
+    events, _, _ = cluster_articles([a_vw_joint, a_audi_joint])
     assert len(events) == 1
 
 
@@ -372,4 +391,102 @@ def test_source_and_publisher_contamination_prevention():
     )
     entities_official = extract_canonical_entities(art_official)
     assert "volkswagen" in entities_official
+
+
+def test_entity_matches_provenance_and_confidence():
+    """Verify EntityMatch accurately tracks match provenance (title, rss_summary, content, official attribution)."""
+    from automotive_newsletter.entity_registry import extract_entity_matches
+
+    # 1. Title provenance
+    art_title = Article(
+        title="BMW announces solid-state battery testing program",
+        url="https://example.com/bmw",
+        source="TechMedia",
+    )
+    matches_title = extract_entity_matches(art_title)
+    assert any(m.entity == "bmw" and m.source == "title" and m.confidence == 1.0 for m in matches_title)
+
+    # 2. RSS summary / excerpt provenance
+    art_excerpt = Article(
+        title="Massive breakthrough in solid-state cells reported",
+        url="https://example.com/excerpt",
+        source="TechMedia",
+        excerpt="Toyota researchers confirmed laboratory milestones for 2027.",
+    )
+    matches_excerpt = extract_entity_matches(art_excerpt)
+    assert any(m.entity == "toyota" and m.source == "rss_summary" and m.confidence == 0.9 for m in matches_excerpt)
+
+    # 3. Content provenance
+    art_content = Article(
+        title="Electric vehicle manufacturing investments ramp up in North America",
+        url="https://example.com/content",
+        source="TechMedia",
+        content="Hyundai Motor Group is constructing a dedicated megasite for electric vehicles and batteries.",
+    )
+    matches_content = extract_entity_matches(art_content)
+    assert any(m.entity == "hyundai" and m.source == "content" and m.confidence == 0.8 for m in matches_content)
+
+    # 4. Publisher attribution for official newsroom
+    art_official = Article(
+        title="Quarterly delivery numbers and financial outlook for investors",
+        url="https://press.bmwgroup.com/release-q3",
+        source="BMW Group PressClub",
+        publisher="BMW Group PressClub",
+        source_type="official",
+        is_official=True,
+    )
+    matches_official = extract_entity_matches(art_official)
+    assert any(m.entity == "bmw" and m.source == "publisher_attribution" and m.confidence == 0.95 for m in matches_official)
+
+
+def test_expanded_publisher_contamination_regression():
+    """Verify exhaustive list of journalistic publishers never contaminate entities, while official newsrooms attribute OEMs."""
+    from automotive_newsletter.entity_registry import extract_canonical_entities
+
+    media_publishers = [
+        ("Reuters", "https://reuters.com/article-1"),
+        ("Bloomberg", "https://bloomberg.com/article-2"),
+        ("AP", "https://apnews.com/article-3"),
+        ("Automotive News", "https://autonews.com/article-4"),
+        ("WardsAuto", "https://wardsauto.com/article-5"),
+        ("Autocar", "https://autocar.co.uk/article-6"),
+        ("MotorTrend", "https://motortrend.com/article-7"),
+        ("Car and Driver", "https://caranddriver.com/article-8"),
+        ("Electrek", "https://electrek.co/article-9"),
+        ("The Verge", "https://theverge.com/article-10"),
+        ("TechCrunch", "https://techcrunch.com/article-11"),
+    ]
+
+    for pub_name, pub_url in media_publishers:
+        art = Article(
+            title="Battery supply chain challenges emerge amid increasing EV adoption",
+            url=pub_url,
+            source=pub_name,
+            publisher=pub_name,
+            source_type="media",
+        )
+        entities = extract_canonical_entities(art)
+        assert len(entities) == 0, f"Media publisher {pub_name} contaminated article entities: {entities}"
+
+    # Official newsrooms
+    official_newsrooms = [
+        ("Volkswagen Newsroom", "volkswagen"),
+        ("BMW Group PressClub", "bmw"),
+        ("Mercedes-Benz Media", "mercedes"),
+        ("Toyota Newsroom", "toyota"),
+        ("Hyundai Newsroom", "hyundai"),
+    ]
+
+    for source_name, expected_oem in official_newsrooms:
+        art_oem = Article(
+            title="Strategic electrification roadmap revealed for global markets",
+            url=f"https://press.{expected_oem}.com/release",
+            source=source_name,
+            publisher=source_name,
+            source_type="official",
+            is_official=True,
+        )
+        entities = extract_canonical_entities(art_oem)
+        assert expected_oem in entities, f"Expected {expected_oem} from {source_name}, got {entities}"
+
 

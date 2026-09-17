@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from automotive_newsletter.clustering import (
+    EVENT_SIMILARITY_THRESHOLD,
     are_articles_same_event,
     calculate_event_similarity,
     cluster_articles,
@@ -1130,10 +1131,17 @@ def test_numeric_discrepancy_investment_benchmark():
     """Verify numeric discrepancy guard separates different investment figures and groups identical ones."""
     dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
 
-    # Different numbers ($2 billion vs $5 billion): must NOT merge
+    # Different soft numbers ($2 billion vs $5 billion): soft penalty keeps it below threshold -> must NOT merge
     f_2b = Article(title="Ford invests $2 billion in Michigan plant", url="https://reuters.com/f2", source="Reuters", published_at=dt, entities=["Ford"])
     f_5b = Article(title="Ford invests $5 billion in Michigan plant", url="https://autonews.com/f5", source="Automotive News", published_at=dt, entities=["Ford"])
-    assert calculate_event_similarity(f_2b, f_5b) == 0.0
+    is_same_diff, sim_diff = are_articles_same_event(f_2b, f_5b)
+    assert not is_same_diff, f"Expected different investment figures to not merge, got {sim_diff}"
+    assert 0.0 < sim_diff < EVENT_SIMILARITY_THRESHOLD, f"Expected soft penalty on numeric mismatch, got {sim_diff}"
+
+    # Hard version mismatch (e.g. v12 vs v13): must strictly return 0.0
+    f_v12 = Article(title="Tesla releases FSD v12 software update", url="https://reuters.com/v12", source="Reuters", published_at=dt, entities=["Tesla"])
+    f_v13 = Article(title="Tesla releases FSD v13 software update", url="https://reuters.com/v13", source="Reuters", published_at=dt, entities=["Tesla"])
+    assert calculate_event_similarity(f_v12, f_v13) == 0.0
 
     # Same number ($2 billion): must merge
     f_2b_announce = Article(title="Ford announces $2 billion investment in Michigan", url="https://reuters.com/f2-ann", source="Reuters", published_at=dt, entities=["Ford"])
@@ -1183,6 +1191,237 @@ def test_clustering_performance_benchmark():
     assert len(all_arts) == 100
     assert len(events) > 0
     assert elapsed < 0.5, f"Expected 100 articles to cluster in < 0.5s, took {elapsed:.3f}s"
+
+
+def test_ai_summary_does_not_affect_clustering():
+    """Verify AI-generated summary_ko NEVER alters clustering output or event similarity."""
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # Identical titles and sources, but radically conflicting AI summaries (prompt example)
+    art_a = Article(
+        title="BMW and Qualcomm announce next-generation automated driving partnership",
+        url="https://reuters.com/bmw-qc-1",
+        source="Reuters",
+        published_at=dt,
+        entities=["BMW", "Qualcomm"],
+        summary_ko="BMW가 Qualcomm과 협력하여 자율주행 플랫폼을 구축합니다.",
+    )
+    # Article B describes the same event, but AI mistakenly generated a summary about Nvidia!
+    art_b = Article(
+        title="BMW and Qualcomm expand automated driving compute collaboration",
+        url="https://autonews.com/bmw-qc-2",
+        source="Automotive News",
+        published_at=dt,
+        entities=["BMW", "Qualcomm"],
+        summary_ko="BMW가 Nvidia와 협력하여 생성형 AI 콕핏을 개발합니다.",  # hallucinated AI summary mentioning Nvidia
+    )
+
+    # Feature extraction must completely ignore summary_ko: Nvidia must NOT be extracted
+    from automotive_newsletter.clustering import extract_clustering_features
+    f_a = extract_clustering_features(art_a)
+    f_b = extract_clustering_features(art_b)
+
+    assert "nvidia" not in f_b.canonical_entities
+    assert "qualcomm" in f_b.canonical_entities
+
+    # They must cluster together based purely on title / deterministic evidence
+    is_same, sim = are_articles_same_event(art_a, art_b)
+    assert is_same
+    assert sim >= 0.65
+
+    events, _, _ = cluster_articles([art_a, art_b])
+    assert len(events) == 1
+
+
+def test_recall_vs_investigation_separation():
+    """Verify Recall context and Investigation context are strictly distinguished across Cases A-E."""
+    from automotive_newsletter.clustering import detect_recall_context, extract_recall_defects
+    from automotive_newsletter.clustering import (
+        RECALL_CONTEXT_NO_RECALL,
+        RECALL_CONTEXT_RECALL,
+        RECALL_CONTEXT_INVESTIGATION,
+    )
+
+    # Case A: NHTSA investigates Tesla FSD -> investigation, NO recall defect
+    case_a = "NHTSA investigates Tesla FSD"
+    assert detect_recall_context(case_a) == RECALL_CONTEXT_INVESTIGATION
+    assert extract_recall_defects(case_a) == set()
+
+    # Case B: NHTSA opens investigation into Tesla braking system -> investigation, NO brake recall defect
+    case_b = "NHTSA opens investigation into Tesla braking system"
+    assert detect_recall_context(case_b) == RECALL_CONTEXT_INVESTIGATION
+    assert extract_recall_defects(case_b) == set()
+
+    # Case C: Ford recalls 300,000 F-150 trucks over brake defect -> recall, brake
+    case_c = "Ford recalls 300,000 F-150 trucks over brake defect"
+    assert detect_recall_context(case_c) == RECALL_CONTEXT_RECALL
+    assert "brake" in extract_recall_defects(case_c)
+
+    # Case D: Ford recalls 250,000 Explorer SUVs over airbag inflator risk -> recall, airbag
+    case_d = "Ford recalls 250,000 Explorer SUVs over airbag inflator risk"
+    assert detect_recall_context(case_d) == RECALL_CONTEXT_RECALL
+    assert "airbag" in extract_recall_defects(case_d)
+
+    # Case E: Tesla recalls vehicles after software defect -> recall, software_glitch
+    case_e = "Tesla recalls vehicles after software defect"
+    assert detect_recall_context(case_e) == RECALL_CONTEXT_RECALL
+    assert "software_glitch" in extract_recall_defects(case_e)
+
+    # Cross check: Pure investigation vs Pure recall on same automaker must NEVER merge
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+    art_inv = Article(
+        title="NHTSA opens investigation into Tesla braking system issues",
+        url="https://nhtsa.gov/tesla-probe",
+        source="NHTSA",
+        published_at=dt,
+        entities=["Tesla"],
+    )
+    art_rec = Article(
+        title="Tesla recalls 50,000 Model Y vehicles over brake defect",
+        url="https://reuters.com/tesla-recall",
+        source="Reuters",
+        published_at=dt,
+        entities=["Tesla"],
+    )
+    assert calculate_event_similarity(art_inv, art_rec) == 0.0
+
+
+def test_partnership_comprehensive_matrix():
+    """Verify partnership clustering matrix across disjoint tech partners and standalone events."""
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # 1. BMW + Qualcomm (two variants: Reuters & Automotive News)
+    bmw_qc_1 = Article(
+        title="BMW and Qualcomm announce next-generation automated driving partnership",
+        url="https://reuters.com/bmw-qc-1",
+        source="Reuters",
+        published_at=dt,
+        entities=["BMW", "Qualcomm"],
+    )
+    bmw_qc_2 = Article(
+        title="Qualcomm and BMW expand the same automated driving collaboration",
+        url="https://autonews.com/bmw-qc-2",
+        source="Automotive News",
+        published_at=dt,
+        entities=["BMW", "Qualcomm"],
+    )
+
+    # 2. BMW + Nvidia
+    bmw_nv_1 = Article(
+        title="BMW partners with Nvidia on next-generation cockpit AI assistant",
+        url="https://reuters.com/bmw-nv-1",
+        source="Reuters",
+        published_at=dt,
+        entities=["BMW", "Nvidia"],
+    )
+    bmw_nv_2 = Article(
+        title="BMW selects Nvidia for in-vehicle cockpit generative AI platform",
+        url="https://autonews.com/bmw-nv-2",
+        source="Automotive News",
+        published_at=dt,
+        entities=["BMW", "Nvidia"],
+    )
+
+    # 3. BMW + Continental
+    bmw_conti = Article(
+        title="BMW partners with Continental on next-generation braking sensors",
+        url="https://reuters.com/bmw-conti",
+        source="Reuters",
+        published_at=dt,
+        entities=["BMW", "Continental"],
+    )
+
+    # 4. BMW standalone restructuring
+    bmw_restruct = Article(
+        title="BMW announces European plant manufacturing restructuring program",
+        url="https://reuters.com/bmw-restruct",
+        source="Reuters",
+        published_at=dt,
+        entities=["BMW"],
+    )
+
+    # 5. BMW standalone earnings
+    bmw_earnings = Article(
+        title="BMW reports third-quarter operating profit and revenue results",
+        url="https://reuters.com/bmw-earnings",
+        source="Reuters",
+        published_at=dt,
+        entities=["BMW"],
+    )
+
+    # Pairwise verification:
+    # BMW + Qualcomm <-> BMW + Qualcomm: SAME
+    assert are_articles_same_event(bmw_qc_1, bmw_qc_2)[0] is True
+
+    # BMW + Nvidia <-> BMW + Nvidia: SAME
+    assert are_articles_same_event(bmw_nv_1, bmw_nv_2)[0] is True
+
+    # BMW + Qualcomm <-> BMW + Nvidia: DIFFERENT
+    assert calculate_event_similarity(bmw_qc_1, bmw_nv_1) == 0.0
+
+    # BMW + Qualcomm <-> BMW + Continental: DIFFERENT
+    assert calculate_event_similarity(bmw_qc_1, bmw_conti) == 0.0
+
+    # BMW + Qualcomm <-> BMW restructuring: DIFFERENT
+    assert calculate_event_similarity(bmw_qc_1, bmw_restruct) == 0.0
+
+    # BMW restructuring <-> BMW earnings: DIFFERENT
+    assert calculate_event_similarity(bmw_restruct, bmw_earnings) == 0.0
+
+    # Full clustering test
+    all_arts = [bmw_qc_1, bmw_qc_2, bmw_nv_1, bmw_nv_2, bmw_conti, bmw_restruct, bmw_earnings]
+    events, event_articles, _ = cluster_articles(all_arts)
+    # Expected: 5 distinct events
+    # 1. BMW + Qualcomm (2 articles)
+    # 2. BMW + Nvidia (2 articles)
+    # 3. BMW + Continental (1 article)
+    # 4. BMW restructuring (1 article)
+    # 5. BMW earnings (1 article)
+    assert len(events) == 5
+    assert len(event_articles) == 7
+
+
+def test_model_and_generation_separation_regression():
+    """Verify rigid separation of distinct vehicle models, generations, and recall types."""
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # Tesla Model 3 vs Model Y
+    t_m3 = Article(title="Tesla unveils new Model 3 sedan features", url="https://reuters.com/m3", source="Reuters", published_at=dt, entities=["Tesla"])
+    t_my = Article(title="Tesla unveils new Model Y crossover features", url="https://reuters.com/my", source="Reuters", published_at=dt, entities=["Tesla"])
+    assert calculate_event_similarity(t_m3, t_my) == 0.0
+
+    # Hyundai Ioniq 5 vs Ioniq 6
+    h_i5 = Article(title="Hyundai launches updated Ioniq 5 electric crossover", url="https://reuters.com/i5", source="Reuters", published_at=dt, entities=["Hyundai"])
+    h_i6 = Article(title="Hyundai launches updated Ioniq 6 electric sedan", url="https://reuters.com/i6", source="Reuters", published_at=dt, entities=["Hyundai"])
+    assert calculate_event_similarity(h_i5, h_i6) == 0.0
+
+    # Euro 6 vs Euro 7
+    e6 = Article(title="EU Commission reviews Euro 6 emission standards", url="https://reuters.com/e6", source="Reuters", published_at=dt)
+    e7 = Article(title="EU Commission reviews Euro 7 emission standards", url="https://reuters.com/e7", source="Reuters", published_at=dt)
+    assert calculate_event_similarity(e6, e7) == 0.0
+
+    # Gen 2 vs Gen 3
+    g2 = Article(title="Automaker introduces Gen 2 battery cells", url="https://reuters.com/g2", source="Reuters", published_at=dt)
+    g3 = Article(title="Automaker introduces Gen 3 battery cells", url="https://reuters.com/g3", source="Reuters", published_at=dt)
+    assert calculate_event_similarity(g2, g3) == 0.0
+
+    # Ford brake vs airbag recall
+    f_brake = Article(title="Ford recalls F-150 trucks over brake defect", url="https://reuters.com/fb", source="Reuters", published_at=dt, entities=["Ford"])
+    f_airbag = Article(title="Ford recalls F-150 trucks over airbag defect", url="https://reuters.com/fa", source="Reuters", published_at=dt, entities=["Ford"])
+    assert calculate_event_similarity(f_brake, f_airbag) == 0.0
+
+    # Tesla software vs brake recall
+    t_sw = Article(title="Tesla recalls 200,000 vehicles over software glitch", url="https://reuters.com/tsw", source="Reuters", published_at=dt, entities=["Tesla"])
+    t_brk = Article(title="Tesla recalls 200,000 vehicles over brake defect", url="https://reuters.com/tbrk", source="Reuters", published_at=dt, entities=["Tesla"])
+    assert calculate_event_similarity(t_sw, t_brk) == 0.0
+
+    # Publisher variants of same recall: must merge
+    t_rec1 = Article(title="Tesla Model Y recall announced over software glitch", url="https://reuters.com/r1", source="Reuters", published_at=dt, entities=["Tesla"])
+    t_rec2 = Article(title="Tesla recalls Model Y over software glitch", url="https://autonews.com/r2", source="Automotive News", published_at=dt, entities=["Tesla"])
+    sim_rec = calculate_event_similarity(t_rec1, t_rec2)
+    assert sim_rec >= 0.70
+    assert are_articles_same_event(t_rec1, t_rec2)[0] is True
+
 
 
 

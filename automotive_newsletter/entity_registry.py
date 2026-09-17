@@ -385,52 +385,136 @@ def parent_group(entity_or_name: str | None) -> str | None:
     return None
 
 
-def extract_canonical_entities(article: Article) -> set[str]:
-    """Extract canonical brand/legal entities (IDs) for event clustering and guards.
+@dataclass(slots=True)
+class EntityMatch:
+    """Canonical entity match with provenance information."""
+    entity: str
+    source: str  # "title", "content", "rss_summary", "explicit_article_entity", "publisher_attribution"
+    confidence: float = 1.0
 
-    Inspects title, tags, and excerpt as primary evidence.
-    Falls back to bounded content (first 1500 chars) only if no entities found.
-    Excludes media/institution publishers (e.g. WardsAuto, Reuters) from contaminating article entities.
+
+MEDIA_PUBLISHERS: set[str] = {
+    "wardsauto",
+    "automotive_news",
+    "reuters",
+    "bloomberg",
+    "ap",
+    "associated_press",
+    "autocar",
+    "motortrend",
+    "car_and_driver",
+    "electrek",
+    "the_verge",
+    "techcrunch",
+    "insideevs",
+    "electrive",
+    "just_auto",
+    "green_car_congress",
+    "autoblog",
+    "auto_motor_und_sport",
+    "handelsblatt",
+    "yonhap",
+    "news1",
+    "newsis",
+}
+
+
+def extract_entity_matches(article: Article) -> list[EntityMatch]:
+    """Extract canonical brand/legal entities with provenance tracking.
+
+    Identifies matches from:
+    1. title (confidence=1.0)
+    2. explicit_article_entity (article.tags / article.entities, confidence=1.0)
+    3. rss_summary (article.excerpt, confidence=0.9)
+    4. content (bounded article.content[:1500], confidence=0.8)
+    5. publisher_attribution (official OEM/regulator newsrooms, confidence=0.95)
+
+    Guarantees media sources/publishers (e.g. Reuters, Automotive News, WardsAuto)
+    never contaminate entities unless the article title is explicitly about them.
     """
-    found: set[str] = set()
-    # Primary text: title, tags, excerpt (explicit subject of the article)
-    primary_text = f"{article.title} {' '.join(article.tags)} {article.excerpt or ''}"
-
-    # If it is an official OEM newsroom/press release, we can also check the official publisher/source
-    if article.is_official or article.source_type == "official":
-        primary_text = f"{primary_text} {article.source} {article.publisher or ''}"
+    matches: list[EntityMatch] = []
+    seen_entities: set[str] = set()
 
     sorted_aliases = sorted(CANONICAL_ENTITY_MAP.keys(), key=lambda k: len(k), reverse=True)
-    for alias in sorted_aliases:
-        if contains_alias(primary_text, alias, raw_text=primary_text):
-            found.add(CANONICAL_ENTITY_MAP[alias])
 
-    # Fallback: if no entities found in title/tags/excerpt, check bounded content[:1500]
-    if not found and article.content:
+    # 1. Title (primary evidence)
+    title_text = article.title or ""
+    title_lower = title_text.lower()
+    for alias in sorted_aliases:
+        cid = CANONICAL_ENTITY_MAP[alias]
+        if cid in seen_entities:
+            continue
+        if contains_alias(title_text, alias, raw_text=title_text):
+            if cid in MEDIA_PUBLISHERS:
+                if alias in title_lower or cid in title_lower:
+                    matches.append(EntityMatch(entity=cid, source="title", confidence=1.0))
+                    seen_entities.add(cid)
+            else:
+                matches.append(EntityMatch(entity=cid, source="title", confidence=1.0))
+                seen_entities.add(cid)
+
+    # 2. Explicit tags
+    if article.tags:
+        tags_text = " ".join(article.tags)
+        for alias in sorted_aliases:
+            cid = CANONICAL_ENTITY_MAP[alias]
+            if cid in seen_entities:
+                continue
+            if contains_alias(tags_text, alias, raw_text=tags_text):
+                if cid not in MEDIA_PUBLISHERS:
+                    matches.append(EntityMatch(entity=cid, source="explicit_article_entity", confidence=1.0))
+                    seen_entities.add(cid)
+
+    # 3. RSS summary / excerpt
+    if article.excerpt:
+        for alias in sorted_aliases:
+            cid = CANONICAL_ENTITY_MAP[alias]
+            if cid in seen_entities:
+                continue
+            if contains_alias(article.excerpt, alias, raw_text=article.excerpt):
+                if cid not in MEDIA_PUBLISHERS:
+                    matches.append(EntityMatch(entity=cid, source="rss_summary", confidence=0.9))
+                    seen_entities.add(cid)
+
+    # 4. Fallback: bounded content (first 1500 characters) if no entities found yet
+    if not seen_entities and article.content:
         bounded_content = article.content[:1500]
         for alias in sorted_aliases:
+            cid = CANONICAL_ENTITY_MAP[alias]
+            if cid in seen_entities:
+                continue
             if contains_alias(bounded_content, alias, raw_text=bounded_content):
-                found.add(CANONICAL_ENTITY_MAP[alias])
+                if cid not in MEDIA_PUBLISHERS:
+                    matches.append(EntityMatch(entity=cid, source="content", confidence=0.8))
+                    seen_entities.add(cid)
 
-    # Fallback: if still not found, check pre-extracted article.entities
-    if not found and article.entities:
+    # 5. Fallback: explicit article.entities only if not found yet
+    if not seen_entities and article.entities:
         for ent in article.entities:
-            can = canonical_entity(ent)
-            if can:
-                found.add(can)
+            cid = canonical_entity(ent)
+            if cid and cid not in seen_entities and cid not in MEDIA_PUBLISHERS:
+                matches.append(EntityMatch(entity=cid, source="explicit_article_entity", confidence=0.95))
+                seen_entities.add(cid)
 
-    # Filter out pure media/publishing institution entities (e.g. WardsAuto, Automotive News)
-    # from being considered as event participants/subjects, unless title explicitly discusses them.
-    title_lower = article.title.lower()
-    filtered: set[str] = set()
-    for ent_id in found:
-        if ent_id in {"wardsauto", "automotive_news"}:
-            if ent_id in title_lower or CANONICAL_ENTITY_MAP.get(ent_id) in title_lower:
-                filtered.add(ent_id)
-        else:
-            filtered.add(ent_id)
+    # 6. Official newsroom publisher attribution
+    if article.is_official or article.source_type == "official":
+        pub_text = f"{article.source or ''} {article.publisher or ''}"
+        for alias in sorted_aliases:
+            cid = CANONICAL_ENTITY_MAP[alias]
+            if cid in seen_entities or cid in MEDIA_PUBLISHERS:
+                continue
+            defn = ENTITY_BY_ID.get(cid)
+            if defn and defn.entity_type in {"oem", "tier1", "battery", "tech", "regulator"}:
+                if contains_alias(pub_text, alias, raw_text=pub_text):
+                    matches.append(EntityMatch(entity=cid, source="publisher_attribution", confidence=0.95))
+                    seen_entities.add(cid)
 
-    return filtered
+    return matches
+
+
+def extract_canonical_entities(article: Article) -> set[str]:
+    """Extract canonical brand/legal entities (IDs) for event clustering and guards."""
+    return {m.entity for m in extract_entity_matches(article)}
 
 
 def extract_parent_groups(article: Article, entities: set[str] | None = None) -> set[str]:

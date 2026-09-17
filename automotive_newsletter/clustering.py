@@ -163,12 +163,48 @@ def extract_generation_identifiers(text: str) -> set[str]:
     return gens
 
 
+RECALL_CONTEXT_NO_RECALL = "NO_RECALL"
+RECALL_CONTEXT_RECALL = "RECALL"
+RECALL_CONTEXT_INVESTIGATION = "INVESTIGATION"
+RECALL_CONTEXT_RECALL_AND_INVESTIGATION = "RECALL_AND_INVESTIGATION"
+
+RECALL_PATTERNS: list[re.Pattern] = [
+    re.compile(r"\brecalls?\b", re.I),
+    re.compile(r"\brecalling\b", re.I),
+    re.compile(r"\brecalled\b", re.I),
+    re.compile(r"\bsafety recall\b", re.I),
+]
+
+INVESTIGATION_PATTERNS: list[re.Pattern] = [
+    re.compile(r"\binvestigat(?:e|es|ed|ing|ion|ions)\b", re.I),
+    re.compile(r"\bprobes?\b", re.I),
+    re.compile(r"\bprobing\b", re.I),
+    re.compile(r"\bprobed\b", re.I),
+    re.compile(r"\binquir(?:y|ies)\b", re.I),
+    re.compile(r"\bpreliminary evaluation\b", re.I),
+    re.compile(r"\bengineering analysis\b", re.I),
+]
+
+
+def detect_recall_context(text: str) -> str:
+    """Detect whether text describes a recall, an investigation, both, or neither."""
+    has_recall = any(p.search(text) for p in RECALL_PATTERNS)
+    has_investigation = any(p.search(text) for p in INVESTIGATION_PATTERNS)
+    if has_recall and has_investigation:
+        return RECALL_CONTEXT_RECALL_AND_INVESTIGATION
+    if has_recall:
+        return RECALL_CONTEXT_RECALL
+    if has_investigation:
+        return RECALL_CONTEXT_INVESTIGATION
+    return RECALL_CONTEXT_NO_RECALL
+
+
 def extract_recall_defects(text: str) -> set[str]:
-    """Extract specific recall defect keywords if text indicates a recall."""
-    text_lower = text.lower()
-    is_recall = any(w in text_lower for w in ["recall", "recalls", "safety defect", "nhtsa probe", "investigation"])
-    if not is_recall:
+    """Extract specific recall defect keywords only if text indicates an actual recall context."""
+    ctx = detect_recall_context(text)
+    if ctx not in (RECALL_CONTEXT_RECALL, RECALL_CONTEXT_RECALL_AND_INVESTIGATION):
         return set()
+    text_lower = text.lower()
     defects = set()
     for defect_key, terms in RECALL_DEFECT_TERMS.items():
         if any(term in text_lower for term in terms):
@@ -257,6 +293,43 @@ def extract_stemmed_tokens(text: str) -> set[str]:
     }
 
 
+JOINT_EVENT_TERMS: set[str] = {
+    "joint",
+    "jointly",
+    "together",
+    "group-wide",
+    "groupwide",
+    "parent company initiative",
+    "shared platform",
+    "joint venture",
+    "jointly announced",
+    "same program",
+    "same restructuring program",
+    "same recall campaign",
+    "co-develop",
+    "co-development",
+    "collaborative",
+    "unified platform",
+    "common platform",
+}
+
+HARD_NUMERIC_PATTERNS: list[re.Pattern] = [
+    re.compile(r"\bv\d+(?:\.\d+)*\b", re.I),
+    re.compile(r"\b\d{2}[vV][-_]?\d+\b", re.I),
+    re.compile(r"\b(?:update|part|phase|stage|round|version|ver|step)\s*[-_]?\s*(\d+)\b", re.I),
+]
+
+
+def extract_hard_numeric_identifiers(text: str) -> set[str]:
+    """Extract rigid identifiers like software versions (v12, v13), NHTSA recall IDs, or sequential updates."""
+    results = set()
+    text_lower = text.lower()
+    for p in HARD_NUMERIC_PATTERNS:
+        for m in p.finditer(text_lower):
+            results.add(m.group(0).replace(" ", "_").replace("-", "_"))
+    return results
+
+
 @dataclass(slots=True)
 class ArticleClusteringFeatures:
     """Precomputed article features for high-performance deterministic clustering."""
@@ -264,6 +337,8 @@ class ArticleClusteringFeatures:
     models: set[str]
     gens: set[str]
     defects: set[str]
+    recall_context: str
+    hard_nums: set[str]
     canonical_entities: set[str]
     parent_groups: set[str]
     oems: set[str]
@@ -275,8 +350,24 @@ class ArticleClusteringFeatures:
 
 
 def extract_clustering_features(article: Article) -> ArticleClusteringFeatures:
-    """Extract and precompute all article features required for clustering and similarity."""
-    text = f"{article.title} {article.summary_ko} {' '.join(article.tags)}"
+    """Extract and precompute all article features required for clustering and similarity.
+
+    Evidence Priority:
+    1. Article title
+    2. Original extracted article content (bounded to first 1500 chars)
+    3. RSS original summary / excerpt
+    4. Explicit deterministic tags / topics
+    (AI-generated summary is strictly NEVER used as clustering evidence).
+    """
+    evidence_parts = [article.title]
+    if article.excerpt:
+        evidence_parts.append(article.excerpt)
+    if article.content:
+        evidence_parts.append(article.content[:1500])
+    if article.tags:
+        evidence_parts.append(" ".join(article.tags))
+    text = " ".join(evidence_parts)
+
     canonical = extract_canonical_entities(article)
     parents = extract_parent_groups(article, entities=canonical)
     return ArticleClusteringFeatures(
@@ -284,6 +375,8 @@ def extract_clustering_features(article: Article) -> ArticleClusteringFeatures:
         models=extract_model_identifiers(text),
         gens=extract_generation_identifiers(text),
         defects=extract_recall_defects(text),
+        recall_context=detect_recall_context(text),
+        hard_nums=extract_hard_numeric_identifiers(article.title),
         canonical_entities=canonical,
         parent_groups=parents,
         oems=canonical & OEM_ENTITIES,
@@ -341,7 +434,15 @@ def calculate_event_similarity(
     if g1 and g2 and g1.isdisjoint(g2):
         return 0.0
 
-    # Guard C: Recall defect collision (e.g. Airbag vs Brake recall)
+    # Guard C1: Recall vs Pure Investigation collision
+    # (e.g. NHTSA investigates Tesla vs Tesla recalls vehicles)
+    ctx1 = f1.recall_context
+    ctx2 = f2.recall_context
+    if (ctx1 == RECALL_CONTEXT_INVESTIGATION and ctx2 == RECALL_CONTEXT_RECALL) or \
+       (ctx1 == RECALL_CONTEXT_RECALL and ctx2 == RECALL_CONTEXT_INVESTIGATION):
+        return 0.0
+
+    # Guard C2: Recall defect collision (e.g. Airbag vs Brake recall)
     d1 = f1.defects
     d2 = f2.defects
     if d1 and d2 and d1.isdisjoint(d2):
@@ -373,12 +474,17 @@ def calculate_event_similarity(
         if not (p1 and p2 and (p1 & p2)):
             return 0.0
 
-        # Distinct brands under the same parent group (e.g. Hyundai vs Kia):
-        # MUST remain separate events unless there are strong joint signals (shared theme + high overlap)
+        # Distinct brands under the same parent group (e.g. Hyundai vs Kia, VW vs Audi):
+        # MUST remain separate events unless there is explicit joint-event evidence
+        # AND shared theme + substantial token overlap.
+        t1_lower = f1.text.lower()
+        t2_lower = f2.text.lower()
+        has_explicit_joint_signal = any(term in t1_lower or term in t2_lower for term in JOINT_EVENT_TERMS)
         has_strong_joint_signal = (
-            has_theme_overlap
+            has_explicit_joint_signal
+            and has_theme_overlap
             and len(inter) >= 3
-            and (jaccard >= 0.50 or containment >= 0.70)
+            and (jaccard >= 0.40 or containment >= 0.60)
         )
         if not has_strong_joint_signal:
             return 0.0
@@ -388,10 +494,14 @@ def calculate_event_similarity(
         if not (p1 and p2 and (p1 & p2)):
             return 0.0
 
+        t1_lower = f1.text.lower()
+        t2_lower = f2.text.lower()
+        has_explicit_joint_signal = any(term in t1_lower or term in t2_lower for term in JOINT_EVENT_TERMS)
         has_strong_joint_signal = (
-            has_theme_overlap
+            has_explicit_joint_signal
+            and has_theme_overlap
             and len(inter) >= 3
-            and (jaccard >= 0.50 or containment >= 0.70)
+            and (jaccard >= 0.40 or containment >= 0.60)
         )
         if not has_strong_joint_signal:
             return 0.0
@@ -404,11 +514,17 @@ def calculate_event_similarity(
     if tech1 and tech2 and tech1.isdisjoint(tech2):
         return 0.0
 
-    # Guard E: Numeric identifiers discrepancy (e.g. update 0 vs update 1, 500,000 vs 100,000)
+    # Guard E1: Hard numeric identifiers (software versions like v12 vs v13, campaign IDs)
+    hn1 = f1.hard_nums
+    hn2 = f2.hard_nums
+    if hn1 and hn2 and hn1.isdisjoint(hn2):
+        return 0.0
+
+    # Soft numeric attributes mismatch (e.g. 500,000 vs 100,000, $2B vs $5B):
+    # Treated as a similarity penalty, not a hard reject
     nums1 = f1.nums
     nums2 = f2.nums
-    if nums1 and nums2 and nums1.isdisjoint(nums2):
-        return 0.0
+    numeric_penalty = 0.35 if (nums1 and nums2 and nums1.isdisjoint(nums2)) else 0.0
 
     # Guard F: Action / Theme incompatibility
     # If both have strong/medium, disjoint event action themes (e.g. restructuring vs partnership)
@@ -431,27 +547,27 @@ def calculate_event_similarity(
 
     if has_company_overlap and has_theme_overlap:
         if len(inter) >= 1 or containment >= 0.25:
-            score = 0.68 + 0.24 * lex + num_bonus + model_bonus + multi_entity_bonus + topic_bonus
-            return round(min(0.99, max(0.60, score)), 3)
+            score = 0.68 + 0.24 * lex + num_bonus + model_bonus + multi_entity_bonus + topic_bonus - numeric_penalty
+            return round(min(0.99, max(0.40, score)), 3)
     elif has_company_overlap:
         # Multi-entity articles (sharing >= 2 specific entities, e.g. OEM + Tech partner)
         # with strong lexical/token overlap:
         if len(c1 & c2) >= 2 and (containment >= 0.40 or len(inter) >= 3):
-            score = 0.65 + 0.25 * lex + num_bonus + model_bonus + multi_entity_bonus + topic_bonus
-            return round(min(0.99, max(0.65, score)), 3)
+            score = 0.65 + 0.25 * lex + num_bonus + model_bonus + multi_entity_bonus + topic_bonus - numeric_penalty
+            return round(min(0.99, max(0.40, score)), 3)
         # If one article has an explicit action theme and the other does not (single company):
         if bool(themes1 ^ themes2):
-            score = 0.35 + 0.30 * lex + num_bonus + model_bonus + topic_bonus
-            return round(min(0.55, max(0.35, score)), 3)
+            score = 0.35 + 0.30 * lex + num_bonus + model_bonus + topic_bonus - numeric_penalty
+            return round(min(0.55, max(0.20, score)), 3)
         elif containment >= 0.40 or len(inter) >= 2:
-            score = 0.58 + 0.32 * lex + num_bonus + model_bonus + topic_bonus
-            return round(min(0.95, max(0.50, score)), 3)
-    elif p1 and p2 and (p1 & p2) and has_theme_overlap and (len(inter) >= 3 and (jaccard >= 0.50 or containment >= 0.70)):
-        score = 0.65 + 0.30 * lex + num_bonus
-        return round(min(0.98, max(0.65, score)), 3)
+            score = 0.58 + 0.32 * lex + num_bonus + model_bonus + topic_bonus - numeric_penalty
+            return round(min(0.95, max(0.35, score)), 3)
+    elif p1 and p2 and (p1 & p2) and has_theme_overlap and (len(inter) >= 3 and (jaccard >= 0.40 or containment >= 0.60)):
+        score = 0.65 + 0.30 * lex + num_bonus - numeric_penalty
+        return round(min(0.98, max(0.40, score)), 3)
     elif jaccard >= 0.45 or containment >= 0.65:
-        score = 0.60 + 0.38 * lex + num_bonus
-        return round(min(0.98, max(0.60, score)), 3)
+        score = 0.60 + 0.38 * lex + num_bonus - numeric_penalty
+        return round(min(0.98, max(0.40, score)), 3)
 
     return round(min(0.20, 0.40 * lex), 3)
 
@@ -767,7 +883,7 @@ def compute_event_coherence_metrics(
 
     if member_count <= 1:
         entities = sorted(list(f_primary.canonical_entities if f_primary else extract_canonical_entities(primary)))
-        themes = sorted(list(f_primary.themes if f_primary else extract_event_themes(f"{primary.title} {primary.summary_ko} {' '.join(primary.tags)}")))
+        themes = sorted(list(f_primary.themes if f_primary else extract_clustering_features(primary).themes))
         return EventCoherenceMetrics(
             event_id=event_id,
             primary_title=primary.title,
