@@ -326,6 +326,26 @@
                           <span class="lang-ko">{{ coverage.label_ko }}</span>
                           <span class="lang-en" style="display:none;">{{ coverage.label_en }}</span>
                         </span>
+                        {% if coverage.independent_source_count < coverage.source_count %}
+                          <span class="coverage-badge" title="{{ coverage.independent_label_en }}">
+                            <span class="lang-ko">{{ coverage.independent_label_ko }}</span>
+                            <span class="lang-en" style="display:none;">{{ coverage.independent_label_en }}</span>
+                          </span>
+                        {% endif %}
+                        {% if coverage.has_official_source %}
+                          <span class="coverage-badge coverage-badge--official" title="{{ coverage.official_label_en }}">
+                            <i data-lucide="shield-check"></i>
+                            <span class="lang-ko">{{ coverage.official_label_ko }}</span>
+                            <span class="lang-en" style="display:none;">{{ coverage.official_label_en }}</span>
+                          </span>
+                        {% endif %}
+                        {% if coverage.has_regulatory_source %}
+                          <span class="coverage-badge coverage-badge--regulatory" title="{{ coverage.regulatory_label_en }}">
+                            <i data-lucide="landmark"></i>
+                            <span class="lang-ko">{{ coverage.regulatory_label_ko }}</span>
+                            <span class="lang-en" style="display:none;">{{ coverage.regulatory_label_en }}</span>
+                          </span>
+                        {% endif %}
                       {% endif %}
                     </div>
                     <span class="priority-pill priority-pill--{{ priority.level }}">
@@ -361,23 +381,43 @@
                       {% endfor %}
                     </div>
                   {% endif %}
-                  {% if source_url %}
-                    <a class="source-link" href="{{ source_url }}" target="_blank" rel="noreferrer">
-                      <i data-lucide="external-link"></i>
-                      <span>
-                        <span class="lang-ko">원문 링크</span>
-                        <span class="lang-en" style="display:none;">Original Link</span>
+                  {% if coverage and coverage.related_sources|length > 1 %}
+                    <p class="related-sources-line">
+                      <span class="related-sources-label">
+                        <span class="lang-ko">관련 출처:</span>
+                        <span class="lang-en" style="display:none;">Related Sources:</span>
                       </span>
-                    </a>
-                  {% else %}
-                    <span class="source-link source-link--muted">
-                      <i data-lucide="link-2-off"></i>
-                      <span>
-                        <span class="lang-ko">원문 확인 중</span>
-                        <span class="lang-en" style="display:none;">Link Pending</span>
-                      </span>
-                    </span>
+                      <span>{{ coverage.related_sources|join(', ') }}</span>
+                    </p>
                   {% endif %}
+                  <div class="article-links">
+                    {% if source_url %}
+                      <a class="source-link" href="{{ source_url }}" target="_blank" rel="noreferrer">
+                        <i data-lucide="external-link"></i>
+                        <span>
+                          <span class="lang-ko">원문 링크</span>
+                          <span class="lang-en" style="display:none;">Original Link</span>
+                        </span>
+                      </a>
+                    {% else %}
+                      <span class="source-link source-link--muted">
+                        <i data-lucide="link-2-off"></i>
+                        <span>
+                          <span class="lang-ko">원문 확인 중</span>
+                          <span class="lang-en" style="display:none;">Link Pending</span>
+                        </span>
+                      </span>
+                    {% endif %}
+                    {% if coverage and coverage.official_source_url and coverage.official_source_url != source_url %}
+                      <a class="source-link source-link--official" href="{{ coverage.official_source_url }}" target="_blank" rel="noreferrer">
+                        <i data-lucide="shield"></i>
+                        <span>
+                          <span class="lang-ko">공식 발표 보기</span>
+                          <span class="lang-en" style="display:none;">Official Source</span>
+                        </span>
+                      </a>
+                    {% endif %}
+                  </div>
                 </article>
               {% else %}
                 <p class="empty-note">

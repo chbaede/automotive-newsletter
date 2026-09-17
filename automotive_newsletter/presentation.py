@@ -165,14 +165,52 @@ def display_url(article: Article) -> str | None:
     return target
 
 
-def display_event_coverage(article: Article) -> dict[str, str | int] | None:
-    count = 1 + len(article.related_article_ids)
-    if count <= 1:
+def display_event_coverage(article: Article) -> dict[str, object] | None:
+    source_count = max(article.event_source_count, 1 + len(article.related_article_ids))
+    if source_count <= 1 and not (article.event_has_official_source or article.is_official):
         return None
+
+    independent_count = (
+        article.event_independent_source_count
+        if article.event_independent_source_count > 0
+        else source_count
+    )
+    has_official = article.event_has_official_source or article.is_official
+    has_reg = article.event_has_regulatory_source or (article.source_type == "regulator")
+
+    source_label_ko = f"{source_count}개 매체"
+    source_label_en = f"{source_count} sources"
+
+    independent_label_ko = f"{independent_count}개 독립 매체"
+    independent_label_en = f"{independent_count} independent publishers"
+
+    official_label_ko = "공식 출처 제공" if has_official else None
+    official_label_en = "Official source available" if has_official else None
+
+    regulatory_label_ko = "규제 기관 출처" if has_reg else None
+    regulatory_label_en = "Regulatory source available" if has_reg else None
+
     return {
-        "count": count,
-        "label_ko": f"{count}개 매체 보도 중",
-        "label_en": f"{count} sources covering this event",
+        "count": source_count,
+        "source_count": source_count,
+        "independent_source_count": independent_count,
+        "has_official_source": has_official,
+        "has_regulatory_source": has_reg,
+        "has_major_media_source": article.event_has_major_media_source,
+        "official_source_url": article.event_official_source_url,
+        "official_source_name": article.event_official_source_name,
+        "reference_source_name": article.event_reference_source_name or article.source,
+        "related_sources": article.event_related_sources or [article.source],
+        "source_label_ko": source_label_ko,
+        "source_label_en": source_label_en,
+        "independent_label_ko": independent_label_ko,
+        "independent_label_en": independent_label_en,
+        "official_label_ko": official_label_ko,
+        "official_label_en": official_label_en,
+        "regulatory_label_ko": regulatory_label_ko,
+        "regulatory_label_en": regulatory_label_en,
+        "label_ko": f"{source_count}개 매체 보도 중",
+        "label_en": f"{source_count} sources covering this event",
     }
 
 

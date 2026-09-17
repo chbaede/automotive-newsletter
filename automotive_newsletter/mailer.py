@@ -7,6 +7,7 @@ from email.message import EmailMessage
 from .config import Settings, load_settings
 from .models import NewsletterIssue
 from .presentation import (
+    display_event_coverage,
     display_summary_ko,
     display_summary_en,
     display_title_ko,
@@ -130,7 +131,23 @@ def build_email_text(issue: NewsletterIssue, lang: str = "ko") -> str:
             region_label = ", ".join(region.label_en if is_en else region.label_ko for region in regions_for_article(article))
             lines.append(f"  Region: {region_label}" if is_en else f"  지역: {region_label}")
             lines.append(f"  Source: {article.source}" if is_en else f"  출처: {article.source}")
-            
+
+            coverage = display_event_coverage(article)
+            if coverage:
+                cov_parts = [str(coverage["source_label_en"] if is_en else coverage["source_label_ko"])]
+                if coverage["independent_source_count"] < coverage["source_count"]:
+                    cov_parts.append(str(coverage["independent_label_en"] if is_en else coverage["independent_label_ko"]))
+                if coverage["has_official_source"]:
+                    cov_parts.append(str(coverage["official_label_en"] if is_en else coverage["official_label_ko"]))
+                lines.append(f"  [{' · '.join(cov_parts)}]")
+                related_srcs = coverage.get("related_sources", [])
+                if len(related_srcs) > 1:
+                    rel_title = "Related Sources: " if is_en else "관련 출처: "
+                    lines.append(f"  {rel_title}{', '.join(related_srcs)}")
+                if coverage.get("official_source_url"):
+                    off_title = "Official Source: " if is_en else "공식 발표: "
+                    lines.append(f"  {off_title}{coverage['official_source_url']}")
+
             source_url = display_url(article)
             if source_url:
                 lines.append(f"  원문: {source_url}")
@@ -173,7 +190,7 @@ def _email_sections(issue: NewsletterIssue, lang: str = "ko") -> list[tuple[str,
 
 
 def _email_metrics(sections: list[tuple[str, str, list]]) -> dict[str, int]:
-    articles = [article for category, _, items in sections for article in items]
+    articles = [article for _, _, items in sections for article in items]
     news_articles = [article for article in articles if article.category != "conference"]
     critical = 0
     high = 0
@@ -241,6 +258,48 @@ def _article_card_html(article, lang: str = "ko") -> str:
         if source_url
         else f'<span style="display:inline-block;margin-top:14px;color:#657285;font-size:13px;font-weight:700;">{no_link_text}</span>'
     )
+
+    coverage = display_event_coverage(article)
+    coverage_badges_html = ""
+    related_sources_html = ""
+    official_cta_html = ""
+    if coverage:
+        pills = [
+            f'<span style="display:inline-block;margin:0 5px 5px 0;padding:2px 7px;border-radius:999px;background-color:#eff6ff;color:#1e40af;font-size:11px;font-weight:700;border:1px solid #bfdbfe;">'
+            f'{html.escape(str(coverage["source_label_en"] if is_en else coverage["source_label_ko"]))}</span>'
+        ]
+        if coverage["independent_source_count"] < coverage["source_count"]:
+            pills.append(
+                f'<span style="display:inline-block;margin:0 5px 5px 0;padding:2px 7px;border-radius:999px;background-color:#eff6ff;color:#1e40af;font-size:11px;font-weight:700;border:1px solid #bfdbfe;">'
+                f'{html.escape(str(coverage["independent_label_en"] if is_en else coverage["independent_label_ko"]))}</span>'
+            )
+        if coverage["has_official_source"]:
+            pills.append(
+                f'<span style="display:inline-block;margin:0 5px 5px 0;padding:2px 7px;border-radius:999px;background-color:#f0fdf4;color:#166534;font-size:11px;font-weight:700;border:1px solid #bbf7d0;">'
+                f'{html.escape(str(coverage["official_label_en"] if is_en else coverage["official_label_ko"]))}</span>'
+            )
+        if coverage["has_regulatory_source"]:
+            pills.append(
+                f'<span style="display:inline-block;margin:0 5px 5px 0;padding:2px 7px;border-radius:999px;background-color:#faf5ff;color:#6b21a8;font-size:11px;font-weight:700;border:1px solid #e9d5ff;">'
+                f'{html.escape(str(coverage["regulatory_label_en"] if is_en else coverage["regulatory_label_ko"]))}</span>'
+            )
+        coverage_badges_html = f'<div style="margin-top:4px;margin-bottom:6px;">{"".join(pills)}</div>'
+
+        related_srcs = coverage.get("related_sources", [])
+        if len(related_srcs) > 1:
+            rel_label = "Related Sources: " if is_en else "관련 출처: "
+            related_sources_html = (
+                f'<p style="margin:8px 0 0;color:#657285;font-size:12px;line-height:1.4;">'
+                f'<strong style="color:#475569;">{rel_label}</strong>{html.escape(", ".join(related_srcs))}</p>'
+            )
+
+        if coverage.get("official_source_url") and coverage["official_source_url"] != source_url:
+            off_text = "Official Source" if is_en else "공식 발표 보기"
+            official_cta_html = (
+                f'<a href="{html.escape(str(coverage["official_source_url"]))}" '
+                f'style="display:inline-block;margin-top:14px;margin-left:8px;padding:10px 14px;border-radius:8px;background-color:#0f766e;color:#ffffff;font-size:13px;font-weight:800;text-decoration:none;">'
+                f'{off_text}</a>'
+            )
     
     p_label = priority.label_en if is_en else priority.label_ko
     title = display_title_en(article) if is_en else display_title_ko(article)
@@ -254,14 +313,16 @@ def _article_card_html(article, lang: str = "ko") -> str:
         f'<table class="brief-card brief-card--{priority.level}" role="presentation" width="100%" cellspacing="0" cellpadding="0" '
         f'style="border-collapse:separate;border-spacing:0;margin:0 0 12px;border:1px solid #dde4ec;border-left:5px solid {colors["solid"]};border-radius:8px;background-color:#ffffff;">'
         '<tr><td style="padding:16px 18px 17px;">'
-        '<div style="margin-bottom:10px;">'
+        '<div style="margin-bottom:8px;">'
         f'<span class="priority-badge" style="display:inline-block;margin:0 8px 7px 0;padding:5px 9px;border-radius:999px;background-color:{colors["solid"]};color:#ffffff;font-size:12px;line-height:1.2;font-weight:800;">{html.escape(p_label)} · {priority.score}</span>'
         f'<span style="display:inline-block;margin-bottom:7px;color:#657285;font-size:12px;line-height:1.2;font-weight:700;">{html.escape(article.source)}</span>'
+        f"{coverage_badges_html}"
         "</div>"
         f'<h3 style="margin:0 0 9px;font-size:18px;line-height:1.38;color:#18202a;">{html.escape(title)}</h3>'
         f'<p style="margin:0 0 10px;padding:9px 10px;border-radius:8px;background-color:{colors["soft"]};color:{colors["text"]};font-size:13px;line-height:1.55;font-weight:700;">{html.escape(reason)}</p>'
         f'<p style="margin:0;color:#334155;font-size:14px;line-height:1.62;">{html.escape(summary)}</p>'
         f'<p style="margin:12px 0 0;color:#657285;font-size:12px;line-height:1.55;">{region_prefix}{html.escape(region_label)} · {source_prefix}{html.escape(article.source)}</p>'
-        f"{tag_html}{cta_html}"
+        f"{related_sources_html}"
+        f"{tag_html}{cta_html}{official_cta_html}"
         "</td></tr></table>"
     )

@@ -87,9 +87,18 @@ class Article:
     recency_score: float = 0.0
     priority_score: float = 0.0
 
-    # Relationships
+    # Relationships & Event Metadata
     event_id: str | None = None
     related_article_ids: list[str] = field(default_factory=list)
+    event_source_count: int = 1
+    event_independent_source_count: int = 1
+    event_has_official_source: bool = False
+    event_has_regulatory_source: bool = False
+    event_has_major_media_source: bool = False
+    event_official_source_url: str | None = None
+    event_official_source_name: str | None = None
+    event_reference_source_name: str | None = None
+    event_related_sources: list[str] = field(default_factory=list)
 
     # Flags
     is_official: bool = False
@@ -147,6 +156,15 @@ class Event:
     created_at: datetime | None = None
     importance: float = 0.0
     primary_article_id: str | None = None
+    source_count: int = 1
+    independent_source_count: int = 1
+    has_official_source: bool = False
+    has_regulatory_source: bool = False
+    has_major_media_source: bool = False
+    official_source_url: str | None = None
+    official_source_name: str | None = None
+    reference_source_name: str | None = None
+    related_sources: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.created_at is None:

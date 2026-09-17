@@ -96,7 +96,7 @@ EVENT_ACTION_THEMES = {
         "reorganiz", "downsiz", "european oper"
     ],
     "recall": [
-        "recall", "defect", "investig", "probe", "nhtsa"
+        "recall", "defect", "investig", "probe", "nhtsa", "inquiry"
     ],
     "partnership_jv": [
         "joint ventur", "partnership", "collaborat", "allianc", "team up", "partner"
@@ -347,15 +347,163 @@ def select_primary_article(articles: list[Article]) -> Article:
     return max(articles, key=primary_source_rank)
 
 
+PUBLISHER_CANONICAL = {
+    "reuters": "Reuters",
+    "thomson reuters": "Reuters",
+    "bloomberg": "Bloomberg",
+    "bloomberg news": "Bloomberg",
+    "associated press": "Associated Press",
+    "ap news": "Associated Press",
+    "ap": "Associated Press",
+    "dow jones": "Dow Jones",
+    "automotive news": "Automotive News",
+    "autonews": "Automotive News",
+    "automotive news europe": "Automotive News",
+    "insideevs": "InsideEVs",
+    "insideevs us": "InsideEVs",
+    "electrive": "electrive",
+    "electrive.com": "electrive",
+    "the verge": "The Verge",
+    "techcrunch": "TechCrunch",
+    "just auto": "Just Auto",
+    "green car congress": "Green Car Congress",
+    "wardsauto": "WardsAuto",
+    "motortrend": "MotorTrend",
+    "car and driver": "Car and Driver",
+    "autoblog": "Autoblog",
+    "auto motor und sport": "auto motor und sport",
+    "handelsblatt": "Handelsblatt",
+    "yna": "연합뉴스",
+    "yonhap": "연합뉴스",
+    "yonhap news": "연합뉴스",
+    "news1": "뉴스1",
+    "newsis": "뉴시스",
+    "korea economic daily": "한국경제",
+    "hankyung": "한국경제",
+    "maeil business": "매일경제",
+    "mk": "매일경제",
+    "nhtsa": "NHTSA",
+    "kba": "KBA",
+    "epa": "EPA",
+}
+
+
+def resolve_originating_publisher(article: Article) -> str:
+    """Resolve originating independent publisher, detecting syndication or wire republication."""
+    pub = (article.publisher or article.source or "Unknown").strip()
+    norm_pub = PUBLISHER_CANONICAL.get(pub.lower(), pub)
+
+    text_to_check = f"{article.title} {article.excerpt} {article.content[:500]}"
+
+    # Check for explicit wire or syndication attribution in text
+    wire_patterns = [
+        re.compile(r"\bvia\s+(reuters|bloomberg|associated press|ap|automotive news|yonhap)\b", re.I),
+        re.compile(r"\((reuters|bloomberg|associated press|ap|afp|yonhap)\)", re.I),
+        re.compile(r"\b(?:reported by|according to|courtesy of)\s+(reuters|bloomberg|associated press|ap|automotive news)\b", re.I),
+        re.compile(r"\b(?:from|by)\s+(reuters|bloomberg|associated press|ap)\b", re.I),
+    ]
+    for pat in wire_patterns:
+        m = pat.search(text_to_check)
+        if m:
+            matched_wire = m.group(1).strip().lower()
+            return PUBLISHER_CANONICAL.get(matched_wire, matched_wire.title())
+
+    if article.discovered_via and any(w in article.discovered_via.lower() for w in ["reuters", "bloomberg", "ap"]):
+        return PUBLISHER_CANONICAL.get(article.discovered_via.lower(), article.discovered_via)
+
+    return norm_pub
+
+
+def calculate_event_source_agreement(cluster: list[Article], primary: Article) -> dict[str, object]:
+    """Calculate source agreement, independent source count, and official/regulatory availability.
+
+    Important: Does not equate source count to truth. Detects syndicated / copied reports.
+    """
+    source_count = len(cluster)
+
+    # 1. Distinguish independent reporting from syndicated/copied content
+    independent_reporters = set()
+    for article in cluster:
+        orig = resolve_originating_publisher(article)
+        independent_reporters.add(orig.lower())
+
+    independent_source_count = max(1, len(independent_reporters))
+    independent_source_count = min(independent_source_count, source_count)
+
+    # 2. Check for official source
+    official_art = next(
+        (a for a in cluster if a.source_type in {"official", "press_release"} or a.is_official),
+        None,
+    )
+    has_official_source = official_art is not None
+    official_source_url = (official_art.canonical_url or official_art.url) if official_art else None
+    official_source_name = (official_art.publisher or official_art.source) if official_art else None
+
+    # 3. Check for regulatory source
+    has_regulatory_source = any(
+        a.source_type == "regulator"
+        or any(
+            reg in (a.publisher or a.source or "").lower()
+            for reg in ["nhtsa", "kba", "epa", "unece", "european commission", "ftc", "sec"]
+        )
+        for a in cluster
+    )
+
+    # 4. Check for major media source
+    has_major_media_source = any(
+        any(
+            wire in (a.publisher or a.source or "").lower()
+            for wire in [
+                "reuters",
+                "bloomberg",
+                "associated press",
+                "ap news",
+                "dow jones",
+                "wall street journal",
+                "wsj",
+                "financial times",
+            ]
+        )
+        for a in cluster
+    )
+
+    reference_source_name = primary.publisher or primary.source
+
+    # 5. Related sources list (preserving primary, official, then others)
+    related_sources: list[str] = []
+    seen: set[str] = set()
+    ordered_arts = [primary]
+    if official_art and official_art != primary:
+        ordered_arts.append(official_art)
+    for a in cluster:
+        if a not in ordered_arts:
+            ordered_arts.append(a)
+
+    for a in ordered_arts:
+        name = (a.publisher or a.source or "").strip()
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            related_sources.append(name)
+
+    return {
+        "source_count": source_count,
+        "independent_source_count": independent_source_count,
+        "has_official_source": has_official_source,
+        "has_regulatory_source": has_regulatory_source,
+        "has_major_media_source": has_major_media_source,
+        "official_source_url": official_source_url,
+        "official_source_name": official_source_name,
+        "reference_source_name": reference_source_name,
+        "related_sources": related_sources,
+    }
+
+
 def cluster_articles(
     articles: list[Article],
     window_hours: float = 72.0,
     embedder: Callable[[list[str]], list[list[float]]] | None = None,
 ) -> tuple[list[Event], list[EventArticle], list[Article]]:
-    """Group articles into Event clusters, link related articles, and return events and primary articles.
-
-    - embedder: Optional embedding callable for semantic similarity enhancement.
-    """
+    """Group articles into Event clusters, calculate source agreement, and link related articles."""
     if not articles:
         return [], [], []
 
@@ -406,6 +554,8 @@ def cluster_articles(
         event_seed = f"{primary.article_id}_{primary.title}"
         event_id = f"evt_{hashlib.sha256(event_seed.encode()).hexdigest()[:16]}"
 
+        agreement = calculate_event_source_agreement(cluster, primary)
+
         event = Event(
             event_id=event_id,
             title=primary.title,
@@ -413,16 +563,35 @@ def cluster_articles(
             created_at=earliest_time,
             importance=max(a.priority_score for a in cluster),
             primary_article_id=primary.article_id,
+            source_count=int(agreement["source_count"]),  # type: ignore[arg-type]
+            independent_source_count=int(agreement["independent_source_count"]),  # type: ignore[arg-type]
+            has_official_source=bool(agreement["has_official_source"]),
+            has_regulatory_source=bool(agreement["has_regulatory_source"]),
+            has_major_media_source=bool(agreement["has_major_media_source"]),
+            official_source_url=str(agreement["official_source_url"]) if agreement["official_source_url"] else None,
+            official_source_name=str(agreement["official_source_name"]) if agreement["official_source_name"] else None,
+            reference_source_name=str(agreement["reference_source_name"]) if agreement["reference_source_name"] else None,
+            related_sources=list(agreement["related_sources"]),  # type: ignore[arg-type]
         )
         events.append(event)
 
-        # Set related article IDs and event ID on all articles in the cluster
+        # Set related article IDs and event metadata on all articles in the cluster
         cluster_article_ids = [a.article_id for a in cluster if a.article_id]
         for article in cluster:
             article.event_id = event_id
             article.related_article_ids = [
                 aid for aid in cluster_article_ids if aid != article.article_id
             ]
+            article.event_source_count = event.source_count
+            article.event_independent_source_count = event.independent_source_count
+            article.event_has_official_source = event.has_official_source
+            article.event_has_regulatory_source = event.has_regulatory_source
+            article.event_has_major_media_source = event.has_major_media_source
+            article.event_official_source_url = event.official_source_url
+            article.event_official_source_name = event.official_source_name
+            article.event_reference_source_name = event.reference_source_name
+            article.event_related_sources = event.related_sources
+
             rel = "primary" if article.article_id == primary.article_id else (
                 "official" if article.is_official else "coverage"
             )

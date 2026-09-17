@@ -139,13 +139,27 @@ class NewsletterStore:
             for event in event_list:
                 conn.execute(
                     """
-                    insert into events (event_id, issue_id, title, category, importance, primary_article_id, created_at)
-                    values (?, ?, ?, ?, ?, ?, ?)
+                    insert into events (
+                        event_id, issue_id, title, category, importance, primary_article_id, created_at,
+                        source_count, independent_source_count, has_official_source, has_regulatory_source,
+                        has_major_media_source, official_source_url, official_source_name,
+                        reference_source_name, related_sources
+                    )
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     on conflict(event_id) do update set
                         title = excluded.title,
                         category = excluded.category,
                         importance = excluded.importance,
-                        primary_article_id = excluded.primary_article_id
+                        primary_article_id = excluded.primary_article_id,
+                        source_count = excluded.source_count,
+                        independent_source_count = excluded.independent_source_count,
+                        has_official_source = excluded.has_official_source,
+                        has_regulatory_source = excluded.has_regulatory_source,
+                        has_major_media_source = excluded.has_major_media_source,
+                        official_source_url = excluded.official_source_url,
+                        official_source_name = excluded.official_source_name,
+                        reference_source_name = excluded.reference_source_name,
+                        related_sources = excluded.related_sources
                     """,
                     (
                         event.event_id,
@@ -155,6 +169,15 @@ class NewsletterStore:
                         event.importance,
                         event.primary_article_id,
                         event.created_at.isoformat() if event.created_at else now,
+                        event.source_count,
+                        event.independent_source_count,
+                        1 if event.has_official_source else 0,
+                        1 if event.has_regulatory_source else 0,
+                        1 if event.has_major_media_source else 0,
+                        event.official_source_url,
+                        event.official_source_name,
+                        event.reference_source_name,
+                        json.dumps(event.related_sources, ensure_ascii=False),
                     ),
                 )
 
@@ -201,17 +224,48 @@ class NewsletterStore:
             ).fetchall()
 
         articles = [self._row_to_article(row) for row in article_rows]
-        events = [
-            Event(
+        events = []
+        event_dict = {}
+        for er in event_rows:
+            keys = set(er.keys())
+
+            def get_col(k: str, default: object = None) -> object:
+                return er[k] if k in keys and er[k] is not None else default
+
+            ev = Event(
                 event_id=er["event_id"],
                 title=er["title"],
                 category=er["category"],
                 created_at=_parse_datetime(er["created_at"]),
                 importance=float(er["importance"]),
                 primary_article_id=er["primary_article_id"],
+                source_count=int(get_col("source_count", 1)),  # type: ignore[arg-type]
+                independent_source_count=int(get_col("independent_source_count", 1)),  # type: ignore[arg-type]
+                has_official_source=bool(get_col("has_official_source", 0)),
+                has_regulatory_source=bool(get_col("has_regulatory_source", 0)),
+                has_major_media_source=bool(get_col("has_major_media_source", 0)),
+                official_source_url=str(get_col("official_source_url")) if get_col("official_source_url") is not None else None,
+                official_source_name=str(get_col("official_source_name")) if get_col("official_source_name") is not None else None,
+                reference_source_name=str(get_col("reference_source_name")) if get_col("reference_source_name") is not None else None,
+                related_sources=json.loads(str(get_col("related_sources", "[]")) or "[]"),
             )
-            for er in event_rows
-        ]
+            event_dict[ev.event_id] = ev
+            events.append(ev)
+
+        # Attach event metadata to articles if article has event_id
+        for art in articles:
+            if art.event_id and art.event_id in event_dict:
+                ev = event_dict[art.event_id]
+                art.event_source_count = ev.source_count
+                art.event_independent_source_count = ev.independent_source_count
+                art.event_has_official_source = ev.has_official_source
+                art.event_has_regulatory_source = ev.has_regulatory_source
+                art.event_has_major_media_source = ev.has_major_media_source
+                art.event_official_source_url = ev.official_source_url
+                art.event_official_source_name = ev.official_source_name
+                art.event_reference_source_name = ev.reference_source_name
+                art.event_related_sources = ev.related_sources
+
         created_at = _parse_datetime(issue_row["created_at"])
         sent_at = _parse_datetime(issue_row["sent_at"])
         return NewsletterIssue(
@@ -431,10 +485,40 @@ class NewsletterStore:
                     category text not null default 'big',
                     importance real not null default 0.0,
                     primary_article_id text,
-                    created_at text not null
+                    created_at text not null,
+                    source_count integer not null default 1,
+                    independent_source_count integer not null default 1,
+                    has_official_source integer not null default 0,
+                    has_regulatory_source integer not null default 0,
+                    has_major_media_source integer not null default 0,
+                    official_source_url text,
+                    official_source_name text,
+                    reference_source_name text,
+                    related_sources text not null default '[]'
                 )
                 """
             )
+
+            # Migration for events table
+            existing_event_columns = {
+                row["name"]
+                for row in conn.execute("pragma table_info(events)").fetchall()
+            }
+            new_event_columns = [
+                ("source_count", "integer not null default 1"),
+                ("independent_source_count", "integer not null default 1"),
+                ("has_official_source", "integer not null default 0"),
+                ("has_regulatory_source", "integer not null default 0"),
+                ("has_major_media_source", "integer not null default 0"),
+                ("official_source_url", "text"),
+                ("official_source_name", "text"),
+                ("reference_source_name", "text"),
+                ("related_sources", "text not null default '[]'"),
+            ]
+            for col_name, col_def in new_event_columns:
+                if col_name not in existing_event_columns:
+                    conn.execute(f"alter table events add column {col_name} {col_def}")
+
             conn.execute(
                 """
                 create table if not exists event_articles (
