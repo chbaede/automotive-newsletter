@@ -35,8 +35,9 @@ def main(argv: list[str] | None = None) -> int:
 
     diag_parser = subparsers.add_parser("diagnose-clustering", help="Diagnose event clustering quality and coherence")
     diag_parser.add_argument("--date", dest="issue_date", help="Issue date (YYYY-MM-DD), default to latest")
-    diag_parser.add_argument("--db", dest="db_path", help="Path to SQLite database")
+    diag_parser.add_argument("--db", "--db-path", dest="db_path", help="Path to SQLite database")
     diag_parser.add_argument("--strict", action="store_true", help="Exit with code 1 if suspicious clusters are detected")
+    diag_parser.add_argument("--show-suspicious", action="store_true", help="Display only suspicious clusters with deep diagnostic breakdown")
 
     args = parser.parse_args(argv)
     command = args.command or "serve"
@@ -184,24 +185,50 @@ def main(argv: list[str] | None = None) -> int:
 
             if metrics.is_suspicious:
                 suspicious_count += 1
-                status_str = f"SUSPICIOUS ({'; '.join(metrics.suspicious_reasons)})"
-            else:
+                if args.show_suspicious:
+                    print(f"\n[SUSPICIOUS EVENT {suspicious_count}] {event.event_id}")
+                    print(f"Primary:")
+                    print(f"  {primary.title} [{primary.publisher or primary.source}]")
+                    print(f"Members:")
+                    for art in cluster_arts:
+                        if art.article_id != primary.article_id:
+                            sim = calculate_event_similarity(primary, art)
+                            print(f"  * [{sim:.3f}] {art.title} [{art.publisher or art.source}]")
+                    print(f"Similarity:")
+                    print(f"  Average: {metrics.avg_similarity:.3f} | Min: {metrics.min_similarity:.3f}")
+                    print(f"Entities:")
+                    print(f"  {', '.join(metrics.entity_overlap) if metrics.entity_overlap else 'None'}")
+                    print(f"Themes:")
+                    print(f"  {', '.join(metrics.theme_overlap) if metrics.theme_overlap else 'None'}")
+                    print(f"Independent Sources:")
+                    print(f"  {metrics.independent_source_count} (Total Members: {metrics.member_count})")
+                    print(f"Reason:")
+                    print(f"  {'; '.join(metrics.suspicious_reasons)}")
+            elif not args.show_suspicious:
                 status_str = "HEALTHY"
+                print(f"\n[Event {idx}] {event.event_id} | Members: {metrics.member_count} | Indep Sources: {metrics.independent_source_count} | Coherence: {metrics.avg_similarity:.3f} (min: {metrics.min_similarity:.3f})")
+                print(f"Status: {status_str}")
+                print(f"Entities: {', '.join(metrics.entity_overlap) if metrics.entity_overlap else 'None'}")
+                print(f"Themes: {', '.join(metrics.theme_overlap) if metrics.theme_overlap else 'None'}")
+                print("Articles:")
+                for art in cluster_arts:
+                    sim = 1.0 if art.article_id == primary.article_id else calculate_event_similarity(primary, art)
+                    tag = "(Primary)" if art.article_id == primary.article_id else ("(Official)" if art.is_official else "(Coverage)")
+                    print(f"  * [{sim:.3f}] {tag:<10} [{art.publisher or art.source}] {art.title}")
 
-            print(f"\n[Event {idx}] {event.event_id} | Members: {metrics.member_count} | Indep Sources: {metrics.independent_source_count} | Coherence: {metrics.avg_similarity:.3f} (min: {metrics.min_similarity:.3f})")
-            print(f"Status: {status_str}")
-            print(f"Entities: {', '.join(metrics.entity_overlap) if metrics.entity_overlap else 'None'}")
-            print(f"Themes: {', '.join(metrics.theme_overlap) if metrics.theme_overlap else 'None'}")
-            print("Articles:")
-            for art in cluster_arts:
-                sim = 1.0 if art.article_id == primary.article_id else calculate_event_similarity(primary, art)
-                tag = "(Primary)" if art.article_id == primary.article_id else ("(Official)" if art.is_official else "(Coverage)")
-                print(f"  * [{sim:.3f}] {tag:<10} [{art.publisher or art.source}] {art.title}")
+        if args.show_suspicious and suspicious_count == 0:
+            print("\nNo suspicious clusters detected! All clusters are healthy.")
 
         avg_multi_coherence = sum(multi_coherence_scores) / max(1, len(multi_coherence_scores)) if multi_coherence_scores else 0.0
 
         print("\n" + "=" * 80)
-        print(f"DIAGNOSTIC SUMMARY: {len(events) - suspicious_count} Healthy, {suspicious_count} Suspicious clusters.")
+        print("DIAGNOSTIC SUMMARY:")
+        print(f"Total Articles: {len(all_articles)}")
+        print(f"Total Events: {len(events)}")
+        print(f"Multi-article Events: {sum(1 for e in events if e.source_count > 1)}")
+        print(f"Singletons: {sum(1 for e in events if e.source_count == 1)}")
+        print(f"Healthy Clusters: {len(events) - suspicious_count}")
+        print(f"Suspicious Clusters: {suspicious_count}")
         print(f"Average Multi-Article Cluster Coherence: {avg_multi_coherence:.3f}")
         print(f"Strict Mode: {'ENABLED' if args.strict else 'DISABLED'}")
         print("=" * 80)

@@ -285,3 +285,91 @@ def test_disjoint_brands_with_strong_joint_event_merges():
 
     events, _, _ = cluster_articles([a_vw, a_audi])
     assert len(events) == 1
+
+
+def test_ambiguous_entity_regression_benchmarks():
+    """Verify exact news-style sentences for ambiguous entities (SEAT, Ford, Lotus, GM, ZF)."""
+    # 1. SEAT
+    art_seat_neg = Article(title="The driver adjusted the seat before departure", url="https://example.com/1", source="AutoBlog")
+    assert "seat" not in extract_canonical_entities(art_seat_neg)
+
+    art_seat_pos = Article(title="SEAT announces new EV strategy", url="https://example.com/2", source="Reuters")
+    assert "seat" in extract_canonical_entities(art_seat_pos)
+
+    # 2. Ford
+    art_ford_neg = Article(title="Harrison Ford stars in a new film", url="https://example.com/3", source="Variety")
+    assert "ford" not in extract_canonical_entities(art_ford_neg)
+
+    art_ford_pos = Article(title="Ford announces new EV investment", url="https://example.com/4", source="Reuters")
+    assert "ford" in extract_canonical_entities(art_ford_pos)
+
+    # 3. Lotus
+    art_lotus_neg = Article(title="The sacred lotus flower blooms across the pond", url="https://example.com/5", source="Nature")
+    assert "lotus" not in extract_canonical_entities(art_lotus_neg)
+
+    art_lotus_pos = Article(title="Lotus Cars unveils new EV", url="https://example.com/6", source="Automotive News")
+    assert "lotus" in extract_canonical_entities(art_lotus_pos)
+
+    # 4. GM
+    art_gm_pos = Article(title="GM announces new electric vehicle strategy", url="https://example.com/7", source="Bloomberg")
+    assert "gm" in extract_canonical_entities(art_gm_pos)
+
+    art_gm_neg = Article(title="10 gm of material was added during test", url="https://example.com/8", source="LabDaily")
+    assert "gm" not in extract_canonical_entities(art_gm_neg)
+
+    # 5. ZF
+    art_zf_pos = Article(title="ZF announces new automotive transmission", url="https://example.com/9", source="Reuters")
+    assert "zf" in extract_canonical_entities(art_zf_pos)
+
+    art_zf_neg = Article(title="Nikon Zf camera with retro dial design reviewed", url="https://example.com/10", source="DPR")
+    assert "zf" not in extract_canonical_entities(art_zf_neg)
+
+
+def test_source_and_publisher_contamination_prevention():
+    """Verify that journalistic media sources/publishers do not contaminate article entities."""
+    # Automotive News as publisher
+    art_an = Article(
+        title="New battery technology discovered for long-range commercial vehicles",
+        url="https://autonews.com/battery-breakthrough",
+        source="Automotive News",
+        publisher="Automotive News",
+        source_type="media",
+    )
+    entities_an = extract_canonical_entities(art_an)
+    assert "automotive_news" not in entities_an
+
+    # WardsAuto as publisher
+    art_wards = Article(
+        title="Rivian CEO announces production ramp for R2 platform",
+        url="https://wardsauto.com/rivian-ramp",
+        source="WardsAuto",
+        publisher="WardsAuto",
+        source_type="media",
+    )
+    entities_wards = extract_canonical_entities(art_wards)
+    assert "rivian" in entities_wards
+    assert "wardsauto" not in entities_wards
+
+    # Reuters as source
+    art_reuters = Article(
+        title="Global auto sales rebound in August following supply chain recovery",
+        url="https://reuters.com/sales-rebound",
+        source="Reuters",
+        publisher="Reuters",
+        source_type="media",
+    )
+    entities_reuters = extract_canonical_entities(art_reuters)
+    assert "reuters" not in entities_reuters
+
+    # Official OEM newsroom (e.g. Volkswagen Newsroom) properly attributes company even if title omits brand
+    art_official = Article(
+        title="Next-generation scalable EV architecture unveiled for 2027",
+        url="https://volkswagen-newsroom.com/release-123",
+        source="Volkswagen Newsroom",
+        publisher="Volkswagen Newsroom",
+        source_type="official",
+        is_official=True,
+    )
+    entities_official = extract_canonical_entities(art_official)
+    assert "volkswagen" in entities_official
+

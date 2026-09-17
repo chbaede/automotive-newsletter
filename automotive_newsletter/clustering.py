@@ -30,11 +30,11 @@ GEN_PATTERNS = [
 
 # Recall defect categories
 RECALL_DEFECT_TERMS = {
-    "airbag": ["airbag", "takata", "inflator"],
-    "steering": ["steering", "power steering", "tie rod"],
-    "brake": ["brake", "braking", "abs", "caliper"],
-    "battery_fire": ["battery fire", "thermal runaway", "short circuit", "fire risk"],
-    "software_glitch": ["software glitch", "display blank", "reboot", "infotainment crash"],
+    "airbag": ["airbag", "air bag", "takata", "inflator"],
+    "steering": ["steering", "power steering", "tie rod", "steering loss", "steering defect"],
+    "brake": ["brake", "braking", "abs", "caliper", "brake line", "brake defect"],
+    "battery_fire": ["battery fire", "thermal runaway", "short circuit", "fire risk", "battery defect"],
+    "software_glitch": ["software glitch", "software defect", "software bug", "software recall", "software issue", "display blank", "reboot", "infotainment crash"],
     "door_latch": ["door latch", "door open", "hood latch"],
     "seatbelt": ["seatbelt", "buckle", "seat belt"],
     "suspension": ["suspension", "ball joint", "control arm"],
@@ -257,8 +257,50 @@ def extract_stemmed_tokens(text: str) -> set[str]:
     }
 
 
+@dataclass(slots=True)
+class ArticleClusteringFeatures:
+    """Precomputed article features for high-performance deterministic clustering."""
+    text: str
+    models: set[str]
+    gens: set[str]
+    defects: set[str]
+    canonical_entities: set[str]
+    parent_groups: set[str]
+    oems: set[str]
+    tech_suppliers: set[str]
+    tokens: set[str]
+    themes: set[str]
+    nums: set[str]
+    topics: set[str]
+
+
+def extract_clustering_features(article: Article) -> ArticleClusteringFeatures:
+    """Extract and precompute all article features required for clustering and similarity."""
+    text = f"{article.title} {article.summary_ko} {' '.join(article.tags)}"
+    canonical = extract_canonical_entities(article)
+    parents = extract_parent_groups(article, entities=canonical)
+    return ArticleClusteringFeatures(
+        text=text,
+        models=extract_model_identifiers(text),
+        gens=extract_generation_identifiers(text),
+        defects=extract_recall_defects(text),
+        canonical_entities=canonical,
+        parent_groups=parents,
+        oems=canonical & OEM_ENTITIES,
+        tech_suppliers=canonical & TECH_SUPPLIER_ENTITIES,
+        tokens=extract_stemmed_tokens(article.title),
+        themes=extract_event_themes(text),
+        nums=set(re.findall(r"\b\d+\b", article.title)),
+        topics={t.lower() for t in article.topics},
+    )
+
+
 def calculate_event_similarity(
-    a1: Article, a2: Article, window_hours: float = 72.0
+    a1: Article,
+    a2: Article,
+    window_hours: float = 72.0,
+    f1: ArticleClusteringFeatures | None = None,
+    f2: ArticleClusteringFeatures | None = None,
 ) -> float:
     """Calculate deterministic pairwise similarity between two articles (0.0 to 1.0).
 
@@ -281,45 +323,47 @@ def calculate_event_similarity(
         if diff_hours > window_hours:
             return 0.0
 
-    t1 = f"{a1.title} {a1.summary_ko} {' '.join(a1.tags)}"
-    t2 = f"{a2.title} {a2.summary_ko} {' '.join(a2.tags)}"
+    if f1 is None:
+        f1 = extract_clustering_features(a1)
+    if f2 is None:
+        f2 = extract_clustering_features(a2)
 
     # 2. Hard Negative Guards
     # Guard A: Model identifiers collision (e.g. Model 3 vs Model Y)
-    m1 = extract_model_identifiers(t1)
-    m2 = extract_model_identifiers(t2)
+    m1 = f1.models
+    m2 = f2.models
     if m1 and m2 and m1.isdisjoint(m2):
         return 0.0
 
     # Guard B: Generation / standard collision (e.g. Euro 6 vs Euro 7, Gen 2 vs Gen 3)
-    g1 = extract_generation_identifiers(t1)
-    g2 = extract_generation_identifiers(t2)
+    g1 = f1.gens
+    g2 = f2.gens
     if g1 and g2 and g1.isdisjoint(g2):
         return 0.0
 
     # Guard C: Recall defect collision (e.g. Airbag vs Brake recall)
-    d1 = extract_recall_defects(t1)
-    d2 = extract_recall_defects(t2)
+    d1 = f1.defects
+    d2 = f2.defects
     if d1 and d2 and d1.isdisjoint(d2):
         return 0.0
 
     # Guard D: Brand / legal entity mismatch with parent group context and cross-OEM separation
-    c1 = extract_canonical_entities(a1)
-    c2 = extract_canonical_entities(a2)
-    p1 = extract_parent_groups(a1)
-    p2 = extract_parent_groups(a2)
+    c1 = f1.canonical_entities
+    c2 = f2.canonical_entities
+    p1 = f1.parent_groups
+    p2 = f2.parent_groups
 
-    oem1 = c1 & OEM_ENTITIES
-    oem2 = c2 & OEM_ENTITIES
+    oem1 = f1.oems
+    oem2 = f2.oems
 
-    tokens1 = extract_stemmed_tokens(a1.title)
-    tokens2 = extract_stemmed_tokens(a2.title)
+    tokens1 = f1.tokens
+    tokens2 = f2.tokens
     inter = tokens1 & tokens2
     union = tokens1 | tokens2
     jaccard = len(inter) / max(1, len(union))
     containment = len(inter) / max(1, min(len(tokens1), len(tokens2)))
-    themes1 = extract_event_themes(t1)
-    themes2 = extract_event_themes(t2)
+    themes1 = f1.themes
+    themes2 = f2.themes
     has_theme_overlap = bool(themes1 & themes2)
 
     # Cross-OEM Guard:
@@ -355,14 +399,14 @@ def calculate_event_similarity(
     # Guard D2: Disjoint Tech / Supplier Partner Guard
     # Same or different automakers partnering with distinct tech/supplier partners
     # (e.g. BMW x Qualcomm vs BMW x Nvidia) must NEVER merge.
-    tech1 = c1 & TECH_SUPPLIER_ENTITIES
-    tech2 = c2 & TECH_SUPPLIER_ENTITIES
+    tech1 = f1.tech_suppliers
+    tech2 = f2.tech_suppliers
     if tech1 and tech2 and tech1.isdisjoint(tech2):
         return 0.0
 
     # Guard E: Numeric identifiers discrepancy (e.g. update 0 vs update 1, 500,000 vs 100,000)
-    nums1 = set(re.findall(r"\b\d+\b", a1.title))
-    nums2 = set(re.findall(r"\b\d+\b", a2.title))
+    nums1 = f1.nums
+    nums2 = f2.nums
     if nums1 and nums2 and nums1.isdisjoint(nums2):
         return 0.0
 
@@ -380,8 +424,8 @@ def calculate_event_similarity(
     num_bonus = 0.04 if (nums1 and nums2 and bool(nums1 & nums2)) else 0.0
     model_bonus = 0.05 if (m1 and m2 and bool(m1 & m2)) else 0.0
     multi_entity_bonus = 0.05 if len(c1 & c2) >= 2 else 0.0
-    topics1 = {t.lower() for t in a1.topics}
-    topics2 = {t.lower() for t in a2.topics}
+    topics1 = f1.topics
+    topics2 = f2.topics
     topic_jaccard = len(topics1 & topics2) / max(1, len(topics1 | topics2)) if (topics1 and topics2) else 0.0
     topic_bonus = 0.03 * topic_jaccard if topic_jaccard > 0 else 0.0
 
@@ -413,13 +457,17 @@ def calculate_event_similarity(
 
 
 def are_articles_same_event(
-    a1: Article, a2: Article, window_hours: float = 72.0
+    a1: Article,
+    a2: Article,
+    window_hours: float = 72.0,
+    f1: ArticleClusteringFeatures | None = None,
+    f2: ArticleClusteringFeatures | None = None,
 ) -> tuple[bool, float]:
     """Determine whether two articles describe the same real-world event.
 
     Returns (is_same_event: bool, similarity: float).
     """
-    sim = calculate_event_similarity(a1, a2, window_hours=window_hours)
+    sim = calculate_event_similarity(a1, a2, window_hours=window_hours, f1=f1, f2=f2)
     is_same = sim >= EVENT_SIMILARITY_THRESHOLD
     return is_same, sim
 
@@ -428,6 +476,7 @@ def check_cluster_coherence(
     cluster: list[Article],
     primary: Article,
     window_hours: float = 72.0,
+    features_by_id: dict[int, ArticleClusteringFeatures] | None = None,
 ) -> tuple[float, list[Article], list[Article]]:
     """Validate cluster coherence against primary and pairwise compatibility.
 
@@ -445,13 +494,16 @@ def check_cluster_coherence(
     retained: list[Article] = [primary]
     outliers: list[Article] = []
 
+    f_primary = features_by_id.get(id(primary)) if features_by_id else None
+
     # Rule 1: Validate each member against primary article
     candidates = [a for a in cluster if a.article_id != primary.article_id]
     scored_candidates: list[tuple[Article, float]] = []
 
     for member in candidates:
-        sim = calculate_event_similarity(primary, member, window_hours=window_hours)
-        is_same, _ = are_articles_same_event(primary, member, window_hours=window_hours)
+        f_member = features_by_id.get(id(member)) if features_by_id else None
+        sim = calculate_event_similarity(primary, member, window_hours=window_hours, f1=f_primary, f2=f_member)
+        is_same, _ = are_articles_same_event(primary, member, window_hours=window_hours, f1=f_primary, f2=f_member)
         if is_same and sim >= EVENT_MEMBER_THRESHOLD:
             scored_candidates.append((member, sim))
         else:
@@ -462,9 +514,11 @@ def check_cluster_coherence(
 
     # Rule 2: Pairwise compatibility check on retained members
     for member, sim in scored_candidates:
+        f_member = features_by_id.get(id(member)) if features_by_id else None
         incompatible = False
         for existing in retained:
-            is_compat, _ = are_articles_same_event(existing, member, window_hours=window_hours)
+            f_existing = features_by_id.get(id(existing)) if features_by_id else None
+            is_compat, _ = are_articles_same_event(existing, member, window_hours=window_hours, f1=f_existing, f2=f_member)
             if not is_compat:
                 incompatible = True
                 break
@@ -699,16 +753,21 @@ def compute_event_coherence_metrics(
     cluster: list[Article],
     primary: Article,
     window_hours: float = 72.0,
+    features_by_id: dict[int, ArticleClusteringFeatures] | None = None,
 ) -> EventCoherenceMetrics:
     """Compute diagnostic coherence metrics for an event cluster."""
     event_seed = f"{primary.article_id}_{primary.title}"
     event_id = f"evt_{hashlib.sha256(event_seed.encode()).hexdigest()[:16]}"
     member_count = len(cluster)
 
+    if features_by_id is None:
+        features_by_id = {id(a): extract_clustering_features(a) for a in cluster}
+
+    f_primary = features_by_id.get(id(primary))
+
     if member_count <= 1:
-        entities = sorted(list(extract_canonical_entities(primary)))
-        t = f"{primary.title} {primary.summary_ko} {' '.join(primary.tags)}"
-        themes = sorted(list(extract_event_themes(t)))
+        entities = sorted(list(f_primary.canonical_entities if f_primary else extract_canonical_entities(primary)))
+        themes = sorted(list(f_primary.themes if f_primary else extract_event_themes(f"{primary.title} {primary.summary_ko} {' '.join(primary.tags)}")))
         return EventCoherenceMetrics(
             event_id=event_id,
             primary_title=primary.title,
@@ -730,7 +789,8 @@ def compute_event_coherence_metrics(
     for m in cluster:
         if m.article_id == primary.article_id:
             continue
-        sim = calculate_event_similarity(primary, m, window_hours=window_hours)
+        f_m = features_by_id.get(id(m))
+        sim = calculate_event_similarity(primary, m, window_hours=window_hours, f1=f_primary, f2=f_m)
         member_sims.append(sim)
         if sim < EVENT_MEMBER_THRESHOLD:
             suspicious_reasons.append(
@@ -741,20 +801,21 @@ def compute_event_coherence_metrics(
     avg_sim = round(sum(member_sims) / len(member_sims), 3) if member_sims else 1.0
 
     # Overlap of entities across all members
-    member_entities = [extract_canonical_entities(m) for m in cluster]
+    member_entities = [features_by_id[id(m)].canonical_entities for m in cluster if id(m) in features_by_id]
     common_entities = set.intersection(*member_entities) if member_entities else set()
 
     # Overlap of themes across all members
-    member_themes = [
-        extract_event_themes(f"{m.title} {m.summary_ko} {' '.join(m.tags)}")
-        for m in cluster
-    ]
+    member_themes = [features_by_id[id(m)].themes for m in cluster if id(m) in features_by_id]
     common_themes = set.intersection(*member_themes) if member_themes else set()
 
     # Pairwise compatibility check across all members in the cluster
     for i in range(len(cluster)):
+        f_i = features_by_id.get(id(cluster[i]))
         for j in range(i + 1, len(cluster)):
-            is_compat, sim_ij = are_articles_same_event(cluster[i], cluster[j], window_hours=window_hours)
+            f_j = features_by_id.get(id(cluster[j]))
+            is_compat, sim_ij = are_articles_same_event(
+                cluster[i], cluster[j], window_hours=window_hours, f1=f_i, f2=f_j
+            )
             if not is_compat:
                 suspicious_reasons.append(
                     f"Pairwise incompatibility: '{cluster[i].title[:30]}' vs '{cluster[j].title[:30]}' (sim={sim_ij:.3f})"
@@ -795,48 +856,60 @@ def cluster_articles(
     if not articles:
         return [], [], []
 
-    pending = list(articles)
+    # 1. Precompute features for each article once (O(N) vs previous O(N^2) feature extraction)
+    features_by_id = {id(a): extract_clustering_features(a) for a in articles}
+    features_list = [features_by_id[id(a)] for a in articles]
+
+    # 2. Build pairwise adjacency graph for candidates
+    n = len(articles)
+    adj: dict[int, set[int]] = {i: set() for i in range(n)}
+    for i in range(n):
+        f_i = features_list[i]
+        for j in range(i + 1, n):
+            is_same, _ = are_articles_same_event(
+                articles[i], articles[j], window_hours=window_hours, f1=f_i, f2=features_list[j]
+            )
+            if is_same:
+                adj[i].add(j)
+                adj[j].add(i)
+
+    # 3. Extract connected components
+    visited = set()
+    candidates: list[list[Article]] = []
+    for i in range(n):
+        if i not in visited:
+            component = []
+            queue = [i]
+            visited.add(i)
+            while queue:
+                curr = queue.pop(0)
+                component.append(articles[curr])
+                for neighbor in adj[curr]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+            candidates.append(component)
+
+    # 4. Validate coherence of each component against primary and pairwise compatibility
     final_clusters: list[list[Article]] = []
+    for comp in candidates:
+        if len(comp) == 1:
+            final_clusters.append(comp)
+            continue
 
-    # Iteratively form coherent clusters so outliers are re-evaluated and never transitively merged
-    while pending:
-        n = len(pending)
-        adj: dict[int, set[int]] = {i: set() for i in range(n)}
-        for i in range(n):
-            for j in range(i + 1, n):
-                is_same, _ = are_articles_same_event(
-                    pending[i], pending[j], window_hours=window_hours
-                )
-                if is_same:
-                    adj[i].add(j)
-                    adj[j].add(i)
+        remaining = list(comp)
+        while remaining:
+            if len(remaining) == 1:
+                final_clusters.append(remaining)
+                break
+            primary = select_primary_article(remaining)
+            _, retained, outliers = check_cluster_coherence(
+                remaining, primary, window_hours=window_hours, features_by_id=features_by_id
+            )
+            final_clusters.append(retained)
+            retained_ids = {a.article_id for a in retained}
+            remaining = [a for a in remaining if a.article_id not in retained_ids]
 
-        visited = set()
-        candidates: list[list[Article]] = []
-        for i in range(n):
-            if i not in visited:
-                component = []
-                queue = [i]
-                visited.add(i)
-                while queue:
-                    curr = queue.pop(0)
-                    component.append(pending[curr])
-                    for neighbor in adj[curr]:
-                        if neighbor not in visited:
-                            visited.add(neighbor)
-                            queue.append(neighbor)
-                candidates.append(component)
-
-        # Process the candidate component: validate against primary & pairwise compatibility
-        target_component = candidates[0]
-        primary = select_primary_article(target_component)
-        _, retained, _ = check_cluster_coherence(
-            target_component, primary, window_hours=window_hours
-        )
-
-        final_clusters.append(retained)
-        retained_ids = {a.article_id for a in retained}
-        pending = [a for a in pending if a.article_id not in retained_ids]
 
     events: list[Event] = []
     event_articles: list[EventArticle] = []
@@ -874,6 +947,7 @@ def cluster_articles(
 
         # Set related article IDs and event metadata on all articles in the cluster
         cluster_article_ids = [a.article_id for a in cluster if a.article_id]
+        f_primary = features_by_id.get(id(primary))
         for article in cluster:
             article.event_id = event_id
             article.event_title = event.title
@@ -894,7 +968,7 @@ def cluster_articles(
                 "official" if article.is_official else "coverage"
             )
             sim = 1.0 if article.article_id == primary.article_id else calculate_event_similarity(
-                primary, article, window_hours=window_hours
+                primary, article, window_hours=window_hours, f1=f_primary, f2=features_by_id.get(id(article))
             )
             event_articles.append(
                 EventArticle(

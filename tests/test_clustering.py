@@ -868,16 +868,17 @@ def test_coherence_metrics_calculation():
     assert metrics.is_suspicious is False
 
 
-def test_cli_diagnose_clustering():
+def test_cli_diagnose_clustering(tmp_path):
     """Verify diagnose-clustering CLI command runs and reports diagnostic summary."""
     from automotive_newsletter.cli import main
 
+    db_file = str(tmp_path / "isolated.db")
     # Running with sample fixture returns 0 (all healthy)
-    code = main(["diagnose-clustering"])
+    code = main(["diagnose-clustering", "--db", db_file])
     assert code == 0
 
     # Running with --strict flag on healthy synthetic fixture returns 0
-    code_strict = main(["diagnose-clustering", "--strict"])
+    code_strict = main(["diagnose-clustering", "--db", db_file, "--strict"])
     assert code_strict == 0
 
 
@@ -972,6 +973,218 @@ def test_supplier_disjoint_partner_guard():
 
     sim = calculate_event_similarity(mb_bosch, mb_continental)
     assert sim == 0.0, f"Expected 0.0 for disjoint suppliers, got {sim}"
+
+
+def test_partnership_clustering_comprehensive_benchmark():
+    """Verify partnership clustering, cross-partner separation, same OEM multi-events, and sister brands."""
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # 1. Same partnership: BMW + Qualcomm
+    bmw_q1 = Article(
+        title="BMW and Qualcomm announce automated driving partnership",
+        url="https://reuters.com/bmw-q1",
+        source="Reuters",
+        publisher="Reuters",
+        published_at=dt,
+        entities=["BMW", "Qualcomm"],
+    )
+    bmw_q2 = Article(
+        title="BMW selects Qualcomm Snapdragon Ride platform",
+        url="https://autonews.com/bmw-q2",
+        source="Automotive News",
+        publisher="Automotive News",
+        published_at=dt,
+        entities=["BMW", "Qualcomm"],
+    )
+    assert calculate_event_similarity(bmw_q1, bmw_q2) >= 0.70
+
+    # 2. Different partner: BMW + Nvidia
+    bmw_nv = Article(
+        title="BMW partners with Nvidia on cockpit AI",
+        url="https://bloomberg.com/bmw-nv",
+        source="Bloomberg",
+        publisher="Bloomberg",
+        published_at=dt,
+        entities=["BMW", "Nvidia"],
+    )
+    assert calculate_event_similarity(bmw_q1, bmw_nv) == 0.0
+
+    # 3. Same OEM, completely different events: earnings vs restructuring vs partnership
+    bmw_earnings = Article(
+        title="BMW reports strong third quarter earnings beating analyst forecasts",
+        url="https://reuters.com/bmw-earnings",
+        source="Reuters",
+        publisher="Reuters",
+        published_at=dt,
+        entities=["BMW"],
+    )
+    bmw_restructuring = Article(
+        title="BMW announces plant workforce restructuring program across Germany",
+        url="https://autonews.com/bmw-restruct",
+        source="Automotive News",
+        publisher="Automotive News",
+        published_at=dt,
+        entities=["BMW"],
+    )
+    assert calculate_event_similarity(bmw_earnings, bmw_restructuring) == 0.0
+    assert calculate_event_similarity(bmw_earnings, bmw_q1) == 0.0
+    assert calculate_event_similarity(bmw_restructuring, bmw_q1) == 0.0
+
+    # 4. Same parent group, different brands (separate events): Audi EV vs Porsche EV
+    audi_ev = Article(
+        title="Audi announces new EV platform for luxury sedans",
+        url="https://reuters.com/audi-ev",
+        source="Reuters",
+        publisher="Reuters",
+        published_at=dt,
+        entities=["Audi"],
+    )
+    porsche_ev = Article(
+        title="Porsche reveals new electric sports car model",
+        url="https://autonews.com/porsche-ev",
+        source="Automotive News",
+        publisher="Automotive News",
+        published_at=dt,
+        entities=["Porsche"],
+    )
+    assert calculate_event_similarity(audi_ev, porsche_ev) == 0.0
+
+    # 5. Same parent group, explicit group-level event: Volkswagen Group platform
+    vw_grp = Article(
+        title="Volkswagen Group announces group-wide unified software platform",
+        url="https://reuters.com/vw-grp-platform",
+        source="Reuters",
+        publisher="Reuters",
+        published_at=dt,
+        entities=["Volkswagen"],
+    )
+    audi_porsche_vw = Article(
+        title="Audi and Porsche adopt Volkswagen Group unified software platform",
+        url="https://autonews.com/audi-porsche-vw-platform",
+        source="Automotive News",
+        publisher="Automotive News",
+        published_at=dt,
+        entities=["Audi", "Porsche", "Volkswagen"],
+    )
+    sim_group = calculate_event_similarity(vw_grp, audi_porsche_vw)
+    assert sim_group >= 0.65, f"Expected group-level event to merge, got {sim_group}"
+
+    # Cluster all articles together and verify distinct event counts
+    all_test_arts = [
+        bmw_q1, bmw_q2, bmw_nv, bmw_earnings, bmw_restructuring,
+        audi_ev, porsche_ev, vw_grp, audi_porsche_vw
+    ]
+    events, _, _ = cluster_articles(all_test_arts)
+    # Expected events:
+    # 1: BMW+Qualcomm (q1, q2)
+    # 2: BMW+Nvidia (nv)
+    # 3: BMW earnings
+    # 4: BMW restructuring
+    # 5: Audi EV
+    # 6: Porsche EV
+    # 7: VW Group platform (vw_grp, audi_porsche_vw)
+    assert len(events) == 7
+
+
+def test_recall_defect_separation_and_reinforcement():
+    """Verify different recall defects on the same OEM are separated, while identical recalls merge."""
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # 5 distinct recalls for Ford
+    ford_brake = Article(title="Ford recalls 300,000 F-150 trucks over brake defect", url="https://example.com/1", source="Reuters", published_at=dt, entities=["Ford"])
+    ford_airbag = Article(title="Ford recalls 300,000 F-150 trucks over airbag inflator risk", url="https://example.com/2", source="Reuters", published_at=dt, entities=["Ford"])
+    ford_steering = Article(title="Ford recalls 300,000 F-150 trucks over power steering loss", url="https://example.com/3", source="Reuters", published_at=dt, entities=["Ford"])
+    ford_battery = Article(title="Ford recalls 300,000 F-150 trucks over battery fire risk", url="https://example.com/4", source="Reuters", published_at=dt, entities=["Ford"])
+    ford_software = Article(title="Ford recalls 300,000 F-150 trucks over display blank software glitch", url="https://example.com/5", source="Reuters", published_at=dt, entities=["Ford"])
+
+    # Any pair with different defects must return 0.0
+    recalls = [ford_brake, ford_airbag, ford_steering, ford_battery, ford_software]
+    for i in range(len(recalls)):
+        for j in range(i + 1, len(recalls)):
+            sim = calculate_event_similarity(recalls[i], recalls[j])
+            assert sim == 0.0, f"Defect collision failed between {recalls[i].title} and {recalls[j].title}: got {sim}"
+
+    # Identical recall from NHTSA vs Ford must merge
+    nhtsa_brake = Article(
+        title="NHTSA recalls 300,000 Ford F-150 trucks over brake defect",
+        url="https://nhtsa.gov/ford-brake-300k",
+        source="NHTSA",
+        publisher="NHTSA",
+        source_type="regulator",
+        published_at=dt,
+        entities=["Ford"],
+    )
+    ford_brake_coverage = Article(
+        title="Ford recalls 300,000 F-150 trucks following NHTSA brake defect",
+        url="https://autonews.com/ford-brake-300k",
+        source="Automotive News",
+        publisher="Automotive News",
+        published_at=dt,
+        entities=["Ford"],
+    )
+    sim_same_recall = calculate_event_similarity(nhtsa_brake, ford_brake_coverage)
+    assert sim_same_recall >= 0.85, f"Expected same recall to merge strongly, got {sim_same_recall}"
+
+
+def test_numeric_discrepancy_investment_benchmark():
+    """Verify numeric discrepancy guard separates different investment figures and groups identical ones."""
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # Different numbers ($2 billion vs $5 billion): must NOT merge
+    f_2b = Article(title="Ford invests $2 billion in Michigan plant", url="https://reuters.com/f2", source="Reuters", published_at=dt, entities=["Ford"])
+    f_5b = Article(title="Ford invests $5 billion in Michigan plant", url="https://autonews.com/f5", source="Automotive News", published_at=dt, entities=["Ford"])
+    assert calculate_event_similarity(f_2b, f_5b) == 0.0
+
+    # Same number ($2 billion): must merge
+    f_2b_announce = Article(title="Ford announces $2 billion investment in Michigan", url="https://reuters.com/f2-ann", source="Reuters", published_at=dt, entities=["Ford"])
+    f_2b_confirm = Article(title="Ford confirms its $2 billion investment plan in Michigan", url="https://bloomberg.com/f2-conf", source="Bloomberg", published_at=dt, entities=["Ford"])
+    sim_same_num = calculate_event_similarity(f_2b_announce, f_2b_confirm)
+    assert sim_same_num >= 0.70, f"Expected same investment to merge, got {sim_same_num}"
+
+
+def test_cli_diagnose_clustering_show_suspicious(tmp_path):
+    """Verify CLI --show-suspicious flag runs successfully."""
+    from automotive_newsletter.cli import main
+
+    db_file = str(tmp_path / "isolated.db")
+    code = main(["diagnose-clustering", "--db", db_file, "--show-suspicious"])
+    assert code == 0
+
+
+def test_clustering_performance_benchmark():
+    """Fast smoke test for cluster_articles execution time (100 articles in < 0.5s)."""
+    import time
+
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+    base_templates = [
+        ("Toyota and Nvidia expand SDV partnership", ["Toyota", "Nvidia"]),
+        ("Volkswagen European manufacturing restructuring", ["Volkswagen"]),
+        ("Ford recalls 500,000 pickup trucks due to brake line issues", ["Ford"]),
+        ("BMW and Qualcomm collaborate on automated driving platform", ["BMW", "Qualcomm"]),
+    ]
+
+    test_articles = []
+    for i in range(100):
+        tmpl_title, tmpl_ents = base_templates[i % len(base_templates)]
+        test_articles.append(
+            Article(
+                title=f"{tmpl_title} variant {i // len(base_templates)}",
+                url=f"https://news.example.com/article-{i}",
+                source=f"Source {i % 5}",
+                publisher=f"Publisher {i % 5}",
+                published_at=dt,
+                entities=tmpl_ents,
+                priority_score=80,
+            )
+        )
+    t0 = time.perf_counter()
+    events, event_articles, all_arts = cluster_articles(test_articles)
+    elapsed = time.perf_counter() - t0
+    assert len(all_arts) == 100
+    assert len(events) > 0
+    assert elapsed < 0.5, f"Expected 100 articles to cluster in < 0.5s, took {elapsed:.3f}s"
+
+
 
 
 

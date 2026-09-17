@@ -230,15 +230,17 @@ TAXONOMY_CONFERENCE_MAP: dict[str, list[str]] = {
 COMMON_WORD_DISAMBIGUATION: dict[str, dict[str, list[re.Pattern]]] = {
     "seat": {
         "negative": [
-            re.compile(r"\bseats?\s+(?:belt|belts|cushion|cushions|heater|heaters|heating|warmer|warmers|track|tracks|frame|frames|module|modules|adjustment|sensor|sensors|position|occupancy|cover|covers|massage|ventilation|failure|problem|issue)\b", re.I),
+            re.compile(r"\bseats?\s+(?:belt|belts|cushion|cushions|heater|heaters|heating|warmer|warmers|track|tracks|frame|frames|module|modules|adjustment|sensor|sensors|position|occupancy|cover|covers|massage|ventilation|failure|problem|issue|before|after|during)\b", re.I),
             re.compile(r"\b(?:heated|heating|ventilated|massage|leather|power|folding|safety|child|baby|infant|bucket|front|rear|back|driver|passenger|third-row|second-row|row)\s+seats?\b", re.I),
             re.compile(r"\b(?:driver|passenger|front|rear)\s+(?:side\s+)?seat\b", re.I),
+            re.compile(r"\b(?:driver'?s?|passenger'?s?)\s+seat\b", re.I),
+            re.compile(r"\b(?:adjust|adjusts|adjusted|adjusting|take|takes|taking|sit|sits|sitting|sat|in|into|on|onto|recline|reclines|reclined)\s+(?:the\s+|a\s+|their\s+|his\s+|her\s+)?seats?\b", re.I),
             re.compile(r"\bseating\b", re.I),
         ],
         "positive": [
             re.compile(r"\bseat\s*(?:s\.?a\.?|cupra|martorell|ibiza|leon|ateca|arona|tarraco)\b", re.I),
             re.compile(r"\b(?:carmaker|automaker|oem|brand)\s+seat\b", re.I),
-            re.compile(r"\bseat\s+(?:brand|carmaker|automaker|unveils|reveals|debuts|recalls|reports|launches|delivers|sales)\b", re.I),
+            re.compile(r"\bseat\s+(?:brand|carmaker|automaker|unveils|reveals|debuts|recalls|reports|launches|delivers|sales|announces|plans|targets|invests|develops)\b", re.I),
         ],
     },
     "mini": {
@@ -249,7 +251,7 @@ COMMON_WORD_DISAMBIGUATION: dict[str, dict[str, list[re.Pattern]]] = {
         "positive": [
             re.compile(r"\bmini\s*(?:cooper|countryman|aceman|clubman|john cooper|electric|ev|brand|carmaker|automaker)\b", re.I),
             re.compile(r"\b(?:bmw|carmaker|automaker|brand)\s+mini\b", re.I),
-            re.compile(r"\bmini\s+(?:unveils|reveals|debuts|launches|reports|recalls|sales)\b", re.I),
+            re.compile(r"\bmini\s+(?:unveils|reveals|debuts|launches|reports|recalls|sales|announces|plans)\b", re.I),
         ],
     },
     "ram": {
@@ -261,48 +263,53 @@ COMMON_WORD_DISAMBIGUATION: dict[str, dict[str, list[re.Pattern]]] = {
         "positive": [
             re.compile(r"\bram\s*(?:1500|2500|3500|trx|promaster|rev|pickup|truck|trucks|brand|carmaker|automaker)\b", re.I),
             re.compile(r"\b(?:dodge|stellantis|carmaker|automaker|brand)\s+ram\b", re.I),
-            re.compile(r"\bram\s+(?:unveils|reveals|debuts|launches|recalls|sales)\b", re.I),
+            re.compile(r"\bram\s+(?:unveils|reveals|debuts|launches|recalls|sales|announces|plans)\b", re.I),
         ],
     },
     "ford": {
         "negative": [
             re.compile(r"\b(?:harrison|gerald|doug|tom|betty|henry)\s+ford\b", re.I),
+            re.compile(r"\bford\s+(?:foundation|theater|theatre|museum|river|crossing)\b", re.I),
             re.compile(r"\briver\s+ford\b", re.I),
         ],
         "positive": [
-            re.compile(r"\bford\s*(?:motor|motor\s+co|f-150|mustang|bronco|explorer|ranger|ev|evs|ceo|shares|recalls|unveils|reveals|sales|said|announced|trucks?)\b", re.I),
+            re.compile(r"\bford\s*(?:motor|motor\s+co|f-150|mustang|bronco|explorer|ranger|ev|evs|ceo|shares|recalls|unveils|reveals|sales|said|announced|announces|investment|trucks?)\b", re.I),
             re.compile(r"\b(?:carmaker|automaker|brand)\s+ford\b", re.I),
         ],
     },
     "lotus": {
         "negative": [
             re.compile(r"\b(?:white|blue|water|sacred)\s+lotus\b", re.I),
-            re.compile(r"\blotus\s+(?:flower|leaf|position|temple)\b", re.I),
+            re.compile(r"\blotus\s+(?:flower|leaf|position|temple|blooms?|blooming)\b", re.I),
         ],
         "positive": [
             re.compile(r"\blotus\s*(?:cars|emira|eletre|evija|emeya|brand|carmaker|automaker|group)\b", re.I),
             re.compile(r"\b(?:geely|carmaker|automaker|brand)\s+lotus\b", re.I),
-            re.compile(r"\blotus\s+(?:unveils|reveals|debuts|launches|sales)\b", re.I),
+            re.compile(r"\blotus\s+(?:unveils|reveals|debuts|launches|sales|announces)\b", re.I),
         ],
     },
     "gm": {
         "negative": [
             re.compile(r"\b\d+\s*gm\b", re.I),
-            re.compile(r"\bgm\s+(?:foods|crops)\b", re.I),
+            re.compile(r"\bgm\s+(?:of\s+material|foods|crops)\b", re.I),
             re.compile(r"\b(?:plant|general)\s+gm\b", re.I),
         ],
         "positive": [
             re.compile(r"\bgeneral\s+motors\b", re.I),
-            re.compile(r"\bgm\s+(?:cruise|korea|defense|motors|ev|evs|ceo|shares|stock|invests|investment|plant|plants|workers|uaw|recalls|unveils|reveals|sales|profit|earnings|said|announced|reported)\b", re.I),
+            re.compile(r"\bgm\s+(?:cruise|korea|defense|motors|ev|evs|ceo|shares|stock|invests|investment|plant|plants|workers|uaw|recalls|unveils|reveals|sales|profit|earnings|said|announced|announces|reported)\b", re.I),
             re.compile(r"\b(?:carmaker|automaker|oem)\s+gm\b", re.I),
         ],
     },
     "zf": {
-        "negative": [],
+        "negative": [
+            re.compile(r"\b(?:nikon|camera|lens|sensor)\s+zf\b", re.I),
+            re.compile(r"\bzf\s+(?:camera|lens|mount)\b", re.I),
+            re.compile(r"\bzero[- ]frequency\b", re.I),
+        ],
         "positive": [
             re.compile(r"\bzf\s*(?:friedrichshafen|group|chassis|gearbox|transmission|supplier|lifeguard|procurement|mobility)\b", re.I),
             re.compile(r"\b(?:supplier|tier\s*1)\s+zf\b", re.I),
-            re.compile(r"\bzf\s+(?:said|announced|reported|unveiled|revealed)\b", re.I),
+            re.compile(r"\bzf\s+(?:said|announced|announces|reported|unveiled|revealed|unveils|develops|develop|presents)\b", re.I),
         ],
     },
 }
@@ -381,36 +388,64 @@ def parent_group(entity_or_name: str | None) -> str | None:
 def extract_canonical_entities(article: Article) -> set[str]:
     """Extract canonical brand/legal entities (IDs) for event clustering and guards.
 
-    Inspects title, source, publisher, tags, and specific entity fields.
+    Inspects title, tags, and excerpt as primary evidence.
+    Falls back to bounded content (first 1500 chars) only if no entities found.
+    Excludes media/institution publishers (e.g. WardsAuto, Reuters) from contaminating article entities.
     """
     found: set[str] = set()
-    primary_text = f"{article.title} {article.source} {article.publisher or ''} {' '.join(article.tags)}"
+    # Primary text: title, tags, excerpt (explicit subject of the article)
+    primary_text = f"{article.title} {' '.join(article.tags)} {article.excerpt or ''}"
+
+    # If it is an official OEM newsroom/press release, we can also check the official publisher/source
+    if article.is_official or article.source_type == "official":
+        primary_text = f"{primary_text} {article.source} {article.publisher or ''}"
 
     sorted_aliases = sorted(CANONICAL_ENTITY_MAP.keys(), key=lambda k: len(k), reverse=True)
     for alias in sorted_aliases:
         if contains_alias(primary_text, alias, raw_text=primary_text):
             found.add(CANONICAL_ENTITY_MAP[alias])
 
-    # Fallback to article.entities if none found in title/source/tags
+    # Fallback: if no entities found in title/tags/excerpt, check bounded content[:1500]
+    if not found and article.content:
+        bounded_content = article.content[:1500]
+        for alias in sorted_aliases:
+            if contains_alias(bounded_content, alias, raw_text=bounded_content):
+                found.add(CANONICAL_ENTITY_MAP[alias])
+
+    # Fallback: if still not found, check pre-extracted article.entities
     if not found and article.entities:
         for ent in article.entities:
             can = canonical_entity(ent)
             if can:
                 found.add(can)
 
-    return found
+    # Filter out pure media/publishing institution entities (e.g. WardsAuto, Automotive News)
+    # from being considered as event participants/subjects, unless title explicitly discusses them.
+    title_lower = article.title.lower()
+    filtered: set[str] = set()
+    for ent_id in found:
+        if ent_id in {"wardsauto", "automotive_news"}:
+            if ent_id in title_lower or CANONICAL_ENTITY_MAP.get(ent_id) in title_lower:
+                filtered.add(ent_id)
+        else:
+            filtered.add(ent_id)
+
+    return filtered
 
 
-def extract_parent_groups(article: Article) -> set[str]:
+def extract_parent_groups(article: Article, entities: set[str] | None = None) -> set[str]:
     """Extract parent corporate groups as weak contextual signals."""
     groups: set[str] = set()
-    entities = extract_canonical_entities(article)
+    if entities is None:
+        entities = extract_canonical_entities(article)
     for ent in entities:
         grp = parent_group(ent)
         if grp:
             groups.add(grp)
 
-    combined = f"{article.title} {article.source} {' '.join(article.entities)}".lower()
+    # Check title, excerpt and official sources for explicit group mentions
+    source_text = f" {article.source}" if (article.is_official or article.source_type == "official") else ""
+    combined = f"{article.title}{source_text} {article.excerpt or ''} {' '.join(article.entities)}".lower()
     for grp_name in set(PARENT_GROUPS.values()):
         if grp_name.lower() in combined:
             groups.add(grp_name)
