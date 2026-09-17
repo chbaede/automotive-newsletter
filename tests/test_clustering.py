@@ -1637,6 +1637,174 @@ def test_sister_brand_explicit_joint_event_matrix():
     assert are_articles_same_event(h_sdv, k_info)[0] is False
 
 
+def test_phase_stage_round_not_hard_zero_guards():
+    """Verify that phase, stage, part, step, round are treated as soft contextual attributes, NOT hard-zero guards."""
+    from automotive_newsletter.clustering import extract_hard_numeric_identifiers
+
+    # 1. extract_hard_numeric_identifiers does NOT treat phase/stage/round/part/step as hard identifiers
+    assert extract_hard_numeric_identifiers("Toyota launches SDV initiative phase 1") == set()
+    assert extract_hard_numeric_identifiers("Toyota launches SDV initiative phase 2") == set()
+    assert extract_hard_numeric_identifiers("Automaker completes round 1 funding") == set()
+    assert extract_hard_numeric_identifiers("Automaker completes round 2 funding") == set()
+    assert extract_hard_numeric_identifiers("Battery project stage 1 operational") == set()
+    assert extract_hard_numeric_identifiers("Battery project stage 2 operational") == set()
+
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # 2. phase 1 vs phase 2 does NOT automatically produce similarity 0.0
+    art_phase1 = Article(
+        title="Toyota announces next-generation SDV development phase 1 rollout",
+        url="https://reuters.com/phase1",
+        source="Reuters",
+        published_at=dt,
+        entities=["Toyota"],
+    )
+    art_phase2 = Article(
+        title="Toyota announces next-generation SDV development phase 2 rollout",
+        url="https://autonews.com/phase2",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Toyota"],
+    )
+    sim_phase = calculate_event_similarity(art_phase1, art_phase2)
+    assert sim_phase > 0.0, f"Expected non-zero similarity for phase differences, got {sim_phase}"
+
+    # 3. round 1 vs round 2 does NOT hard-zero
+    art_r1 = Article(
+        title="Rivian completes round 1 of supply chain restructuring",
+        url="https://reuters.com/r1",
+        source="Reuters",
+        published_at=dt,
+        entities=["Rivian"],
+    )
+    art_r2 = Article(
+        title="Rivian completes round 2 of supply chain restructuring",
+        url="https://autonews.com/r2",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Rivian"],
+    )
+    sim_round = calculate_event_similarity(art_r1, art_r2)
+    assert sim_round > 0.0, f"Expected non-zero similarity for round differences, got {sim_round}"
+
+    # 4. stage 1 vs stage 2 does NOT hard-zero
+    art_s1 = Article(
+        title="Hyundai begins stage 1 expansion of battery facility",
+        url="https://reuters.com/s1",
+        source="Reuters",
+        published_at=dt,
+        entities=["Hyundai"],
+    )
+    art_s2 = Article(
+        title="Hyundai begins stage 2 expansion of battery facility",
+        url="https://autonews.com/s2",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Hyundai"],
+    )
+    sim_stage = calculate_event_similarity(art_s1, art_s2)
+    assert sim_stage > 0.0, f"Expected non-zero similarity for stage differences, got {sim_stage}"
+
+
+def test_sister_brand_tightened_negative_guards():
+    """Verify negative guards when sister brands are mentioned in separate initiatives or lack explicit joint phrases."""
+    from automotive_newsletter.clustering import has_explicit_joint_event_signal
+
+    dt = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
+    # 1. VW and Audi mentioned in same article but separate initiatives: must NOT be joint
+    art_sep = Article(
+        title="Volkswagen cuts 5,000 factory jobs in Germany while Audi expands electric plant in Hungary",
+        url="https://reuters.com/vw-audi-separate",
+        source="Reuters",
+        published_at=dt,
+        entities=["Volkswagen", "Audi"],
+    )
+    art_vw_only = Article(
+        title="Volkswagen announces 5,000 workforce cuts across German assembly plants",
+        url="https://autonews.com/vw-cuts-only",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Volkswagen"],
+    )
+    assert not has_explicit_joint_event_signal(art_sep, art_vw_only)
+
+    # 2. VW restructuring + Audi restructuring: MUST BE DIFFERENT (similarity == 0.0)
+    vw_re = Article(
+        title="Volkswagen announces European manufacturing restructuring",
+        url="https://reuters.com/vw-restruct-alone",
+        source="Reuters",
+        published_at=dt,
+        entities=["Volkswagen"],
+    )
+    audi_re = Article(
+        title="Audi announces European manufacturing restructuring",
+        url="https://autonews.com/audi-restruct-alone",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Audi"],
+    )
+    assert not has_explicit_joint_event_signal(vw_re, audi_re)
+    assert calculate_event_similarity(vw_re, audi_re) == 0.0
+    assert are_articles_same_event(vw_re, audi_re)[0] is False
+
+    # 3. Hyundai software + Kia software: MUST BE DIFFERENT (similarity == 0.0)
+    hyundai_sw = Article(
+        title="Hyundai Motor reveals new vehicle software architecture",
+        url="https://reuters.com/hyundai-sw",
+        source="Reuters",
+        published_at=dt,
+        entities=["Hyundai"],
+    )
+    kia_sw = Article(
+        title="Kia reveals new vehicle software architecture",
+        url="https://autonews.com/kia-sw",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Kia"],
+    )
+    assert not has_explicit_joint_event_signal(hyundai_sw, kia_sw)
+    assert calculate_event_similarity(hyundai_sw, kia_sw) == 0.0
+    assert are_articles_same_event(hyundai_sw, kia_sw)[0] is False
+
+    # 4. BMW + Mini unrelated events: MUST BE DIFFERENT (similarity == 0.0)
+    bmw_earn = Article(
+        title="BMW reports strong third-quarter operating profit",
+        url="https://reuters.com/bmw-profit",
+        source="Reuters",
+        published_at=dt,
+        entities=["BMW"],
+    )
+    mini_ev = Article(
+        title="Mini announces pricing for new electric Cooper",
+        url="https://autonews.com/mini-cooper",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Mini"],
+    )
+    assert not has_explicit_joint_event_signal(bmw_earn, mini_ev)
+    assert calculate_event_similarity(bmw_earn, mini_ev) == 0.0
+    assert are_articles_same_event(bmw_earn, mini_ev)[0] is False
+
+    # 5. Generic words alone (shared, common, unified, collaborative) without specific joint context are NOT joint
+    art_generic1 = Article(
+        title="Volkswagen discusses common challenges in automotive manufacturing",
+        url="https://reuters.com/vw-gen",
+        source="Reuters",
+        published_at=dt,
+        entities=["Volkswagen"],
+    )
+    art_generic2 = Article(
+        title="Audi discusses shared operations in automotive manufacturing",
+        url="https://autonews.com/audi-gen",
+        source="Automotive News",
+        published_at=dt,
+        entities=["Audi"],
+    )
+    assert not has_explicit_joint_event_signal(art_generic1, art_generic2)
+    assert calculate_event_similarity(art_generic1, art_generic2) == 0.0
+
+
 
 
 

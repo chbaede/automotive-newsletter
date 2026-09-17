@@ -16,7 +16,7 @@ MODEL_PATTERNS = [
     re.compile(r"\bioniq\s+([56789])\b", re.IGNORECASE),
     re.compile(r"\bev\s*([1-9])\b", re.IGNORECASE),
     re.compile(r"\b(taycan|macan|panamera|cayenne)\b", re.IGNORECASE),
-    re.compile(r"\b(mach-e|f-150\s+lightning)\b", re.IGNORECASE),
+    re.compile(r"\b(mach-e|f[- ]?150(?:\s+lightning)?)\b", re.IGNORECASE),
     re.compile(r"\b(i[34578]|ix[13]?|ix)\b", re.IGNORECASE),
     re.compile(r"\b(eq[abces]|eqe|eqs)\b", re.IGNORECASE),
 ]
@@ -93,19 +93,21 @@ THEME_TIERS: dict[str, dict[str, list[str]]] = {
         ],
         "software_platform": [
             "software-defined vehicle", "sdv architecture", "vehicle os", "zonal architecture",
-            "ota update", "infotainment platform",
+            "ota update", "over-the-air update", "over the air update", "infotainment platform",
+            "super cruise", "hands-free driving", "driver assistance", "software architecture",
+            "vehicle software",
         ],
     },
     "medium": {
         "restructuring": ["restructur", "cut", "layoff", "job cut", "closur", "plant clos", "reorganiz", "downsiz", "european oper"],
         "recall": ["recall", "recalls", "defect", "investig", "probe", "nhtsa", "inquiry"],
         "partnership_jv": ["joint ventur", "partnership", "collaborat", "allianc", "team up", "partner", "joint"],
-        "investment_plant": ["invest", "gigafactory", "plant build", "expans", "spending", "facility"],
+        "investment_plant": ["invest", "gigafactory", "plant build", "expans", "spending", "facility", "commit"],
         "platform_unveil": ["unveil", "reveal", "debut", "concept", "premier"],
         "earnings_financial": ["earn", "profit", "revenu", "q1", "q2", "q3", "q4", "margin", "guidanc", "loss"],
         "leadership_exec": ["ceo", "appoint", "step down", "resign", "execut", "chief"],
         "cybersecurity_incident": ["hack", "cyber", "vulnerabilit", "ransomwar", "breach"],
-        "software_platform": ["sdv", "autosar", "ota", "operating system", "vehicle os", "middleware", "infotainment"],
+        "software_platform": ["sdv", "autosar", "ota", "over-the-air", "over the air", "operating system", "vehicle os", "middleware", "infotainment", "super cruise", "driver assistance"],
     },
     "weak": {
         "restructuring": ["loss"],
@@ -297,23 +299,31 @@ EXPLICIT_JOINT_PHRASES: set[str] = {
     "joint",
     "jointly",
     "together",
-    "shared",
-    "common",
-    "unified",
     "joint venture",
     "co-development",
     "co-develop",
+    "jointly develop",
+    "jointly developed",
+    "jointly announce",
+    "jointly announced",
+    "joint announcement",
+    "shared platform",
+    "common platform",
+    "unified platform",
+    "unified software platform",
+    "shared software platform",
+    "common software platform",
+    "group-wide platform",
+    "group-wide software platform",
+    "group-wide unified platform",
+    "collaborative development",
     "same program",
     "same restructuring program",
     "same recall campaign",
+    "same group-wide program",
     "group-wide",
     "groupwide",
     "parent company initiative",
-    "jointly announced",
-    "shared platform",
-    "unified platform",
-    "common platform",
-    "collaborative",
 }
 
 JOINT_EVENT_TERMS: set[str] = EXPLICIT_JOINT_PHRASES
@@ -321,10 +331,10 @@ JOINT_EVENT_TERMS: set[str] = EXPLICIT_JOINT_PHRASES
 # Explicit cross-brand subject construction patterns for sister brands under shared parent groups
 SISTER_BRAND_SUBJECT_PATTERNS: list[re.Pattern] = [
     # Volkswagen Group
-    re.compile(r"\b(?:volkswagen|vw)\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:audi|porsche|seat|skoda)\b", re.I),
-    re.compile(r"\b(?:audi|porsche|seat|skoda)\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:volkswagen|vw)\b", re.I),
-    re.compile(r"\bboth\s+(?:volkswagen|vw)\s+and\s+(?:audi|porsche|seat|skoda)\b", re.I),
-    re.compile(r"\bboth\s+(?:audi|porsche|seat|skoda)\s+and\s+(?:volkswagen|vw)\b", re.I),
+    re.compile(r"\b(?:volkswagen|vw|audi|porsche)\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:volkswagen|vw|audi|porsche|seat|skoda)\b", re.I),
+    re.compile(r"\b(?:audi|porsche|seat|skoda)\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:volkswagen|vw|audi|porsche)\b", re.I),
+    re.compile(r"\bboth\s+(?:volkswagen|vw|audi|porsche)\s+and\s+(?:audi|porsche|seat|skoda)\b", re.I),
+    re.compile(r"\bboth\s+(?:audi|porsche|seat|skoda)\s+and\s+(?:volkswagen|vw|audi|porsche)\b", re.I),
     # Hyundai Motor Group
     re.compile(r"\bhyundai\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:kia|genesis)\b", re.I),
     re.compile(r"\bkia\s+(?:and|&|\+|with|,)\s+(?:both\s+)?(?:hyundai|genesis)\b", re.I),
@@ -347,7 +357,11 @@ PARENT_PROGRAM_PATTERNS: list[re.Pattern] = [
     re.compile(r"\b(?:volkswagen|vw)\s+group\b.*?\b(?:covers?|affect(?:s|ed|ing)?|appl(?:ies|y)|includes?)\b.*?\b(?:both\s+)?(?:volkswagen|vw|audi|porsche)\b", re.I),
     re.compile(r"\bhyundai(?:\s+motor)?\s+group\b.*?\b(?:covers?|affect(?:s|ed|ing)?|appl(?:ies|y)|includes?)\b.*?\b(?:both\s+)?(?:hyundai|kia)\b", re.I),
     re.compile(r"\b(?:the\s+)?same\s+group[- ]wide\s+(?:program|initiative|restructuring|recall)\b", re.I),
+    re.compile(r"\bgroup[- ]wide\s+(?:unified\s+|shared\s+)?(?:program|initiative|restructuring|recall|platform|software|architecture)\b", re.I),
     re.compile(r"\bgroup[- ]wide\s+(?:program|initiative|restructuring|recall|platform)\s+(?:covers?|affect(?:s|ed|ing)?|appl(?:ies|y)|includes?|for)\b", re.I),
+    re.compile(r"\b(?:the\s+)?same\s+recall\s+campaign\s+(?:covers?|affect(?:s|ed|ing)?|appl(?:ies|y)|for)\s+both\b", re.I),
+    re.compile(r"\b(?:included\s+in|part\s+of)\s+the\s+same\s+group[- ]wide\s+(?:program|initiative|restructuring)\b", re.I),
+    re.compile(r"\b(?:covers?|affect(?:s|ed|ing)?|appl(?:ies|y)|includes?)\s+both\s+(?:brands|automakers|carmakers)\b", re.I),
     re.compile(r"\b(?:covers?|affect(?:s|ed|ing)?|appl(?:ies|y)|includes?)\s+both\s+\w+\s+and\s+\w+\b", re.I),
 ]
 
@@ -359,6 +373,9 @@ SHARED_INITIATIVE_PHRASES: set[str] = {
     "group-wide initiative",
     "group-wide program",
     "group-wide restructuring",
+    "group-wide platform",
+    "group-wide software platform",
+    "group-wide unified platform",
     "the same joint program",
 }
 
@@ -374,9 +391,12 @@ def has_explicit_joint_event_signal(
     """Determine whether two articles share explicit joint-event, cross-brand, or parent-program signals.
 
     SAME PARENT GROUP ALONE IS NEVER SUFFICIENT.
-    Requires at least one of:
-    A. Explicit joint phrases (e.g. 'jointly', 'shared platform', 'same restructuring program')
-    B. Explicit cross-brand subject construction (e.g. 'Volkswagen and Audi', 'Hyundai and Kia')
+    Generic event themes (restructuring, platform, recall, software, SDV) without explicit
+    joint evidence are strictly rejected.
+
+    Requires explicit evidence that the brands participate in the same initiative:
+    A. Explicit joint phrases (e.g. 'jointly announce', 'joint venture', 'shared platform')
+    B. Explicit cross-brand subject construction WITH joint phrase (e.g. 'Volkswagen and Audi jointly...')
     C. Explicit parent-program construction (e.g. 'Volkswagen Group restructuring covers VW and Audi')
     """
     t1 = text1 if text1 is not None else ((f1.text if f1 else (extract_clustering_features(a1).text if a1 else "")).lower())
@@ -388,13 +408,11 @@ def has_explicit_joint_event_signal(
     if any(p.search(t1) or p.search(t2) for p in PARENT_PROGRAM_PATTERNS):
         return True
 
-    # Check B: Explicit cross-brand subject construction
+    # Check B: Explicit cross-brand subject construction WITH joint phrase
     has_cross_brand = any(p.search(t1) or p.search(t2) for p in SISTER_BRAND_SUBJECT_PATTERNS)
     has_joint_phrase = any(term in t1 or term in t2 for term in EXPLICIT_JOINT_PHRASES)
 
     if has_cross_brand and (has_joint_phrase or any(p.search(combined) for p in PARENT_PROGRAM_PATTERNS)):
-        return True
-    if has_cross_brand and any(w in combined for w in ("restructur", "platform", "recall", "sdv", "software")):
         return True
 
     # Check A: Both articles explicitly describe the same joint initiative
@@ -423,10 +441,6 @@ EURO_HARD_PATTERN = re.compile(
     r"\beuro\s*[-_]?\s*(\d+[a-z]?)\b",
     re.IGNORECASE,
 )
-PHASE_HARD_PATTERN = re.compile(
-    r"\b(phase|stage|part|step|round)\s*[-_]?\s*(\d+)\b",
-    re.IGNORECASE,
-)
 NHTSA_CAMPAIGN_PATTERN = re.compile(
     r"\b(\d{2}[vVecEtT])[-_]?(\d{3,4})\b",
     re.IGNORECASE,
@@ -442,7 +456,10 @@ def _normalize_version_num(num_str: str) -> str:
 
 
 def extract_hard_numeric_identifiers(text: str) -> set[str]:
-    """Extract normalized rigid identifiers like software versions, generations, NHTSA campaign IDs, or sequential phases."""
+    """Extract normalized rigid identifiers like software versions, generations, or NHTSA campaign IDs.
+
+    Sequential phrases (phase, stage, part, step, round) remain soft contextual numeric attributes.
+    """
     results: set[str] = set()
     text_lower = text.lower()
 
@@ -470,15 +487,48 @@ def extract_hard_numeric_identifiers(text: str) -> set[str]:
     for m in EURO_HARD_PATTERN.finditer(text_lower):
         results.add(f"euro:{m.group(1)}")
 
-    # 5. Sequential phases / stages / parts (phase 1, stage 2 -> phase:1, stage:2)
-    for m in PHASE_HARD_PATTERN.finditer(text_lower):
-        results.add(f"{m.group(1)}:{m.group(2)}")
-
-    # 6. NHTSA recall campaign IDs (24V-123, 24V123 -> campaign:24v123)
+    # 5. NHTSA recall campaign IDs (24V-123, 24V123 -> campaign:24v123)
     for m in NHTSA_CAMPAIGN_PATTERN.finditer(text_lower):
         results.add(f"campaign:{m.group(1)}{m.group(2)}")
 
     return results
+
+
+def extract_quantity_numbers(text: str) -> set[str]:
+    """Extract normalized financial amounts and production/recall volumes.
+
+    Ignores model codes (e.g. F-150), software versions, campaign IDs,
+    Euro standards, and 4-digit calendar years.
+    """
+    text_clean = text.lower()
+    text_clean = NHTSA_CAMPAIGN_PATTERN.sub(" ", text_clean)
+    text_clean = EURO_HARD_PATTERN.sub(" ", text_clean)
+    text_clean = VERSION_PATTERN.sub(" ", text_clean)
+    text_clean = GEN_HARD_PATTERN.sub(" ", text_clean)
+    text_clean = re.sub(r"\b[a-z]{1,4}[-.]?\d+[a-z]?\b", " ", text_clean)
+    text_clean = re.sub(r"\b(?:19|20)\d{2}\b", " ", text_clean)
+
+    quantities: set[str] = set()
+    for m in re.finditer(r"\$\s*(\d+(?:\.\d+)?)\s*(b|billion|m|million)?\b", text_clean):
+        val = m.group(1)
+        unit = (m.group(2) or "").lower()
+        if unit.startswith("b"):
+            quantities.add(f"${val}b")
+        elif unit.startswith("m"):
+            quantities.add(f"${val}m")
+        else:
+            quantities.add(f"${val}")
+
+    for m in re.finditer(r"\b(\d{1,3}(?:,\d{3})+)\b", text_clean):
+        norm = m.group(1).replace(",", "")
+        quantities.add(norm)
+
+    for m in re.finditer(r"\b(\d+)\b", text_clean):
+        num_str = m.group(1)
+        if len(num_str) >= 4 and int(num_str) >= 1000:
+            quantities.add(num_str)
+
+    return quantities
 
 
 @dataclass(slots=True)
@@ -534,7 +584,7 @@ def extract_clustering_features(article: Article) -> ArticleClusteringFeatures:
         tech_suppliers=canonical & TECH_SUPPLIER_ENTITIES,
         tokens=extract_stemmed_tokens(article.title),
         themes=extract_event_themes(text),
-        nums=set(re.findall(r"\b\d+\b", article.title)),
+        nums=extract_quantity_numbers(article.title),
         topics={t.lower() for t in article.topics},
     )
 
@@ -653,6 +703,21 @@ def calculate_event_similarity(
         if not has_strong_joint_signal:
             return 0.0
 
+    # Sister-brand Joint vs Standalone Guard:
+    # If one article reports a multi-brand joint initiative (>= 2 sister brands under parent group P)
+    # and the other only reports a single brand under P without explicit joint signal,
+    # they must remain separate events.
+    if p1 and p2 and (p1 & p2):
+        for pg in (p1 & p2):
+            sisters1 = {o for o in oem1 if parent_group(o) == pg}
+            sisters2 = {o for o in oem2 if parent_group(o) == pg}
+            if len(sisters1) >= 2 and len(sisters2) == 1:
+                if not has_explicit_joint_event_signal(a2, a2, f2, f2):
+                    return 0.0
+            elif len(sisters2) >= 2 and len(sisters1) == 1:
+                if not has_explicit_joint_event_signal(a1, a1, f1, f1):
+                    return 0.0
+
     # Guard D2: Disjoint Tech / Supplier Partner Guard
     # Same or different automakers partnering with distinct tech/supplier partners
     # (e.g. BMW x Qualcomm vs BMW x Nvidia) must NEVER merge.
@@ -676,7 +741,15 @@ def calculate_event_similarity(
     # Guard F: Action / Theme incompatibility
     # If both have strong/medium, disjoint event action themes (e.g. restructuring vs partnership)
     if themes1 and themes2 and themes1.isdisjoint(themes2):
-        return 0.0
+        collab_themes = {"partnership_jv", "platform_unveil", "software_platform"}
+        is_collab_pair = (
+            len(c1 & c2) >= 2
+            and themes1.issubset(collab_themes)
+            and themes2.issubset(collab_themes)
+            and (len(inter) >= 2 or containment >= 0.35)
+        )
+        if not is_collab_pair:
+            return 0.0
 
     has_company_overlap = bool(c1 & c2)
 
