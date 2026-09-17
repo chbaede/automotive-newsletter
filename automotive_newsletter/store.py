@@ -81,7 +81,8 @@ class NewsletterStore:
                         source_score, relevance_score, impact_score, novelty_score, recency_score,
                         priority_score, event_id, event_title, related_article_ids,
                         is_official, is_reference, is_primary_source, collected_at,
-                        content, key_points, summary_model, summary_version, summary_created_at
+                        content, key_points, summary_model, summary_version, summary_created_at,
+                        content_source_type
                     )
                     values (
                         ?, ?, ?, ?, ?, ?, ?,
@@ -92,7 +93,7 @@ class NewsletterStore:
                         ?, ?, ?, ?, ?,
                         ?, ?, ?, ?,
                         ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?
+                        ?, ?, ?, ?, ?, ?
                     )
                     """,
                     (
@@ -139,6 +140,7 @@ class NewsletterStore:
                         article.summary_model,
                         article.summary_version,
                         article.summary_created_at.isoformat() if article.summary_created_at else None,
+                        article.content_source_type,
                     ),
                 )
 
@@ -448,7 +450,8 @@ class NewsletterStore:
                     key_points text not null default '[]',
                     summary_model text,
                     summary_version text,
-                    summary_created_at text
+                    summary_created_at text,
+                    content_source_type text not null default 'fallback'
                 )
                 """
             )
@@ -491,6 +494,7 @@ class NewsletterStore:
                 ("summary_model", "text"),
                 ("summary_version", "text"),
                 ("summary_created_at", "text"),
+                ("content_source_type", "text default 'fallback'"),
             ]
             for col_name, col_def in new_columns:
                 if col_name not in existing_columns:
@@ -782,6 +786,7 @@ class NewsletterStore:
 
         collected_at = _parse_datetime(get_val("collected_at"))
         content = str(get_val("content", ""))
+        content_source_type = str(get_val("content_source_type", "fallback"))
         key_points = get_json_list("key_points")
         summary_model = get_val("summary_model")
         summary_version = get_val("summary_version")
@@ -826,6 +831,7 @@ class NewsletterStore:
             is_primary_source=is_primary_source,
             collected_at=collected_at,
             content=content,
+            content_source_type=content_source_type,
             key_points=key_points,
             summary_model=str(summary_model) if summary_model is not None else None,
             summary_version=str(summary_version) if summary_version is not None else None,

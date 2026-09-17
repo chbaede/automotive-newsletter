@@ -54,6 +54,10 @@ class RobotsTxtPolicy:
                     parser = urllib.robotparser.RobotFileParser()
                     parser.parse(resp.text.splitlines())
                     return parser
+                elif resp.status_code in (401, 403):
+                    parser = urllib.robotparser.RobotFileParser()
+                    parser.parse(["User-agent: *", "Disallow: /"])
+                    return parser
         except Exception:
             pass
         return None
@@ -124,6 +128,8 @@ def fetch_article_page_text(
     user_agent: str = "AutomotiveNewsletter/0.1 (+local research app)",
     robots_policy: RobotsTxtPolicy | None = None,
 ) -> str:
+    if not url or _is_intermediary(url):
+        return ""
     policy = robots_policy or _ROBOTS_POLICY
     if not policy.can_fetch(url):
         return ""
@@ -151,7 +157,7 @@ def extract_usable_article_text(
     1. RSS content (<content:encoded> / content)
     2. RSS summary / description
     3. Article page extraction (respecting robots.txt & limits)
-    4. Fallback to title / excerpt
+    4. Fallback to excerpt / title
     """
     # 1. Check RSS content field
     if raw_entry:
@@ -160,38 +166,82 @@ def extract_usable_article_text(
             for item in content_items:
                 if isinstance(item, dict) and "value" in item:
                     val = extract_text_from_html(item["value"])
-                    if len(val) >= 200:
-                        return ExtractedContent(text=val, source_type="rss_content", is_short_excerpt=False)
+                    if val.strip():
+                        return ExtractedContent(
+                            text=val,
+                            source_type="rss_content",
+                            is_short_excerpt=len(val) < 250,
+                        )
+                elif isinstance(item, str) and item.strip():
+                    val = extract_text_from_html(item)
+                    if val.strip():
+                        return ExtractedContent(
+                            text=val,
+                            source_type="rss_content",
+                            is_short_excerpt=len(val) < 250,
+                        )
+        elif isinstance(content_items, str) and content_items.strip():
+            val = extract_text_from_html(content_items)
+            if val.strip():
+                return ExtractedContent(
+                    text=val,
+                    source_type="rss_content",
+                    is_short_excerpt=len(val) < 250,
+                )
+
+        for k in ("content:encoded", "content_encoded"):
+            val_raw = raw_entry.get(k)
+            if isinstance(val_raw, str) and val_raw.strip():
+                val = extract_text_from_html(val_raw)
+                if val.strip():
+                    return ExtractedContent(
+                        text=val,
+                        source_type="rss_content",
+                        is_short_excerpt=len(val) < 250,
+                    )
 
     # 2. Check RSS summary / description
-    rss_summary = ""
     if raw_entry:
         summary_raw = raw_entry.get("summary") or raw_entry.get("description") or ""
-        if summary_raw:
-            rss_summary = extract_text_from_html(summary_raw)
-            if len(rss_summary) >= 300:
-                return ExtractedContent(text=rss_summary, source_type="rss_summary", is_short_excerpt=False)
+        if summary_raw and str(summary_raw).strip():
+            rss_summary = extract_text_from_html(str(summary_raw))
+            if rss_summary.strip():
+                return ExtractedContent(
+                    text=rss_summary,
+                    source_type="rss_summary",
+                    is_short_excerpt=len(rss_summary) < 250,
+                )
 
-    # 3. Article page extraction
+    # 3. Article page extraction (when RSS content/summary unavailable)
     if allow_page_fetch and url and not _is_intermediary(url):
         page_text = fetch_article_page_text(
             url, timeout=timeout, robots_policy=robots_policy
         )
-        if len(page_text) >= 200:
-            return ExtractedContent(text=page_text, source_type="page_extraction", is_short_excerpt=False)
+        if page_text and len(page_text.strip()) >= 50:
+            return ExtractedContent(
+                text=page_text,
+                source_type="page_extraction",
+                is_short_excerpt=len(page_text) < 250,
+            )
 
-    # 4. Fallback: use RSS summary or excerpt or title
-    fallback_text = rss_summary or excerpt.strip() or title.strip()
-    is_short = len(fallback_text) < 250
+    # 4. Fallback: use excerpt or title
+    fallback_text = (excerpt or "").strip() or title.strip()
     return ExtractedContent(
         text=fallback_text,
-        source_type="fallback" if not rss_summary else "rss_summary",
-        is_short_excerpt=is_short,
+        source_type="fallback",
+        is_short_excerpt=len(fallback_text) < 250,
     )
 
 
 def _is_intermediary(url: str) -> bool:
+    if not url:
+        return False
     parsed = urlparse(url)
     host = parsed.netloc.lower()
-    return host.endswith("google.com") or host.endswith("news.google.com")
+    return (
+        host == "google.com"
+        or host.endswith(".google.com")
+        or "news.google" in host
+        or host.endswith("google.co.uk")
+    )
 

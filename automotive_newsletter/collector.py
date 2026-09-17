@@ -95,10 +95,37 @@ def are_titles_similar(t1: str, t2: str) -> bool:
     return False
 
 
+def should_allow_page_fetch(
+    feed: SourceFeed | None = None,
+    entry_bucket: str | None = None,
+    entry_source_type: str | None = None,
+    settings: Settings | None = None,
+) -> bool:
+    """Determine whether page extraction is permissible for an entry.
+
+    Respects settings and avoids fetching for conference reference entries or
+    known static fallback/reference articles unless explicitly configured.
+    """
+    if settings is None:
+        settings = load_settings()
+    if not settings.fetch_article_excerpts:
+        return False
+    # Requirement 10: Do not fetch article pages unnecessarily for conference reference entries
+    if entry_bucket == "conference" or (feed and feed.bucket == "conference"):
+        return False
+    # Requirement 10: Do not fetch for known static fallback/reference articles
+    if entry_source_type in {"reference", "static"}:
+        return False
+    if feed and (feed.source_type in {"reference", "static"} or feed.bucket in {"reference", "conference"}):
+        return False
+    return True
+
+
 def collect_from_entries(
     entries: Iterable[FeedEntry],
     recent_articles: Iterable[Article] | None = None,
     summarizer: BaseSummarizer | None = None,
+    settings: Settings | None = None,
 ) -> tuple[list[Article], list[str]]:
     articles: list[Article] = []
     seen_urls: set[str] = set()
@@ -142,13 +169,36 @@ def collect_from_entries(
                 title_index.setdefault(tok, []).append(entry.title)
 
         publisher_name = clean_text(entry.publisher or entry.source, 80) or "Unknown"
+        article_content = entry.content
+        content_source = getattr(entry, "content_source_type", "fallback") or "fallback"
+
+        # Requirement 1: Call extract_usable_article_text when content is missing
+        if not article_content:
+            active_settings = settings or load_settings()
+            allow_fetch = should_allow_page_fetch(
+                feed=None,
+                entry_bucket=entry.bucket,
+                entry_source_type=entry.source_type,
+                settings=active_settings,
+            )
+            extracted = extract_usable_article_text(
+                raw_entry=None,
+                url=canonical_url,
+                title=entry.title,
+                excerpt=entry.excerpt,
+                allow_page_fetch=allow_fetch,
+                timeout=active_settings.content_fetch_timeout,
+            )
+            article_content = extracted.text
+            content_source = extracted.source_type
+
         article = Article(
             title=clean_text(entry.title, 240),
             url=canonical_url,
             source=publisher_name,
             category=entry.bucket,
             published_at=entry.published_at,
-            excerpt=clean_text(entry.excerpt, 420),
+            excerpt=clean_text(entry.excerpt or article_content, 420),
             discovered_via=entry.discovered_via,
             source_id=entry.source_id,
             authority_score=entry.authority_score,
@@ -164,14 +214,15 @@ def collect_from_entries(
                 entry.source_type in {"official", "regulator", "press_release"}
             ),
             collected_at=entry.collected_at or datetime.now(timezone.utc),
-            content=entry.content,
+            content=article_content,
+            content_source_type=content_source,
         )
-        is_short = len((entry.content or entry.excerpt).strip()) < 250
+        is_short = len((article_content or article.excerpt).strip()) < 250
         articles.append(
             classify_article(
                 article,
                 summarizer=summarizer,
-                content=entry.content,
+                content=article_content,
                 is_short_excerpt=is_short,
             )
         )
@@ -808,15 +859,22 @@ def fetch_feed_entries(
                     else url
                 )
 
+                allow_fetch = should_allow_page_fetch(
+                    feed=feed,
+                    entry_bucket=feed.bucket,
+                    entry_source_type=source_type,
+                    settings=settings,
+                )
                 extracted = extract_usable_article_text(
                     raw_entry=raw,
                     url=resolved_url,
                     title=title,
                     excerpt=excerpt,
-                    allow_page_fetch=settings.fetch_article_excerpts,
+                    allow_page_fetch=allow_fetch,
                     timeout=settings.content_fetch_timeout,
                 )
                 usable_content = extracted.text
+                content_source = extracted.source_type
                 if not excerpt and usable_content:
                     excerpt = clean_text(usable_content, 420)
 
@@ -835,6 +893,7 @@ def fetch_feed_entries(
                         source_type=source_type,
                         source_authority=authority,
                         content=usable_content,
+                        content_source_type=content_source,
                     )
                 )
                 time.sleep(0.02)

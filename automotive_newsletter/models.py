@@ -22,6 +22,7 @@ class FeedEntry:
     canonical_url: str | None = None
     collected_at: datetime | None = None
     content: str = ""
+    content_source_type: str = "fallback"
 
     def __post_init__(self) -> None:
         if self.source_authority is None:
@@ -68,6 +69,7 @@ class Article:
     summary_en: str = ""
     why_it_matters_ko: str = ""
     content: str = ""
+    content_source_type: str = "fallback"
     key_points: list[str] = field(default_factory=list)
     summary_model: str | None = None
     summary_version: str | None = None
