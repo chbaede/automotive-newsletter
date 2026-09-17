@@ -46,8 +46,8 @@ ENTITY_ALIASES = {
     "toyota": "toyota",
     "lexus": "toyota",
     "hyundai": "hyundai",
-    "kia": "hyundai",
-    "genesis": "hyundai",
+    "kia": "kia",
+    "genesis": "genesis",
     "ford": "ford",
     "gm": "gm",
     "general motors": "gm",
@@ -503,7 +503,12 @@ def cluster_articles(
     window_hours: float = 72.0,
     embedder: Callable[[list[str]], list[list[float]]] | None = None,
 ) -> tuple[list[Event], list[EventArticle], list[Article]]:
-    """Group articles into Event clusters, calculate source agreement, and link related articles."""
+    """Group articles into Event clusters, calculate source agreement, and link related articles.
+
+    Note: The embedder parameter is reserved for future optional semantic embedding models;
+    deterministic clustering is currently used.
+    Clustering NEVER removes articles: returns (events, event_articles, all_articles).
+    """
     if not articles:
         return [], [], []
 
@@ -542,7 +547,6 @@ def cluster_articles(
 
     events: list[Event] = []
     event_articles: list[EventArticle] = []
-    primary_articles: list[Article] = []
 
     for cluster in clusters:
         primary = select_primary_article(cluster)
@@ -606,6 +610,4 @@ def cluster_articles(
                 )
             )
 
-        primary_articles.append(primary)
-
-    return events, event_articles, primary_articles
+    return events, event_articles, articles

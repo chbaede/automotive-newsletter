@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from urllib.parse import urlsplit
 
+from .clustering import select_primary_article
 from .models import Article
 from .priority import LEVELS, assess_priority
 from .summarizer import (
@@ -564,10 +565,32 @@ def build_intelligence_sections(issue: NewsletterIssue, lang: str = "ko") -> lis
     sections: list[dict[str, object]] = []
     assigned_urls = set()
 
+    # Identify primary articles for presentation:
+    # A cluster displays only one primary article card in the newsletter,
+    # with related sources and multi-source coverage indicators.
+    primary_article_ids = {
+        e.primary_article_id for e in issue.events if e.primary_article_id
+    }
+    if not primary_article_ids and any(a.event_id for a in issue.articles):
+        seen_events: set[str] = set()
+        for a in issue.articles:
+            if a.event_id and a.event_id not in seen_events:
+                event_group = [x for x in issue.articles if x.event_id == a.event_id]
+                primary = select_primary_article(event_group)
+                if primary.article_id:
+                    primary_article_ids.add(primary.article_id)
+                seen_events.add(a.event_id)
+
+    # Eligible articles for display in sections (primary or standalone)
+    displayable_articles = [
+        a for a in issue.articles
+        if not a.event_id or not primary_article_ids or a.article_id in primary_article_ids
+    ]
+
     for defn in INTELLIGENCE_SECTION_DEFINITIONS:
         cats = defn["categories"]
         articles = [
-            a for a in issue.articles
+            a for a in displayable_articles
             if (a.category in cats or getattr(a, "primary_category", "") in cats)
             and a.url not in assigned_urls
         ]
@@ -587,7 +610,7 @@ def build_intelligence_sections(issue: NewsletterIssue, lang: str = "ko") -> lis
             "articles": sorted_articles,
         })
 
-    leftovers = [a for a in issue.articles if a.url not in assigned_urls]
+    leftovers = [a for a in displayable_articles if a.url not in assigned_urls]
     if leftovers:
         for a in leftovers:
             target_key = "regulation" if a.source_type in {"regulator", "institution"} else "market"

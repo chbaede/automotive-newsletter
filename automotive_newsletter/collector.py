@@ -14,7 +14,7 @@ import feedparser
 import httpx
 from bs4 import BeautifulSoup
 
-from .clustering import cluster_articles
+from .clustering import cluster_articles, select_primary_article
 from .config import Settings, load_settings
 from .content_extractor import extract_usable_article_text
 from .logging import logger
@@ -186,6 +186,42 @@ def collect_from_entries(
     return articles, []
 
 
+def select_presentation_articles(
+    articles: list[Article],
+    events: list[Event] | None = None,
+    per_section: int = 5,
+) -> list[Article]:
+    """Select primary article for each cluster and limit to per_section per category."""
+    primary_ids = {e.primary_article_id for e in events or [] if e.primary_article_id}
+    if not primary_ids and any(a.event_id for a in articles):
+        seen_events: set[str] = set()
+        for a in articles:
+            if a.event_id and a.event_id not in seen_events:
+                group = [x for x in articles if x.event_id == a.event_id]
+                prim = select_primary_article(group)
+                if prim.article_id:
+                    primary_ids.add(prim.article_id)
+                seen_events.add(a.event_id)
+
+    candidate_articles = [
+        a for a in articles
+        if not a.event_id or not primary_ids or a.article_id in primary_ids
+    ]
+
+    selected: list[Article] = []
+    for section in SECTION_ORDER:
+        section_articles = [article for article in candidate_articles if article.category == section]
+        direct_section_articles = [
+            article for article in section_articles if not is_intermediary_url(article.url)
+        ]
+        if direct_section_articles:
+            section_articles = direct_section_articles
+        selected.extend(section_articles[:per_section])
+    if not selected:
+        selected = candidate_articles[: per_section * len(SECTION_ORDER)]
+    return selected
+
+
 def build_issue_articles(
     entries: Iterable[FeedEntry] | Iterable[Article],
     per_section: int = 5,
@@ -206,23 +242,8 @@ def build_issue_articles(
             classify_article(article, summarizer=summarizer) for article in entry_list  # type: ignore[arg-type]
         ]
 
-    # Cluster articles into events and select primary reference article for each event
-    _events, _event_articles, clustered_articles = cluster_articles(articles)
-    if clustered_articles:
-        articles = clustered_articles
-
-    selected: list[Article] = []
-    for section in SECTION_ORDER:
-        section_articles = [article for article in articles if article.category == section]
-        direct_section_articles = [
-            article for article in section_articles if not is_intermediary_url(article.url)
-        ]
-        if direct_section_articles:
-            section_articles = direct_section_articles
-        selected.extend(section_articles[:per_section])
-    if not selected:
-        selected = articles[: per_section * len(SECTION_ORDER)]
-    return selected
+    events, _event_articles, all_articles = cluster_articles(articles)
+    return select_presentation_articles(all_articles, events=events, per_section=per_section)
 
 
 def collect_and_store(
@@ -243,23 +264,38 @@ def collect_and_store(
     feeds_to_fetch = feeds if feeds is not None else get_enabled_sources()
 
     try:
+        # 1. Fetch
         entries, warnings, stats = fetch_feed_entries(  # type: ignore[misc]
             feeds_to_fetch, settings=settings, return_stats=True
         )
         raw_count = len(entries)
+
+        # 2. Canonicalize -> Deduplicate -> Classify -> Score
         deduped_articles, _ = collect_from_entries(
             entries, recent_articles=recent_articles, summarizer=summarizer
         )
         articles_after_dedupe = len(deduped_articles)
 
-        articles = build_issue_articles(
-            deduped_articles, recent_articles=recent_articles, summarizer=summarizer
-        )
-        articles = ensure_required_fallbacks(articles, issue_date=issue_date)
-        articles_selected = len(articles)
+        # 3. Add fallback/reference content if necessary
+        all_articles = ensure_required_fallbacks(deduped_articles, issue_date=issue_date)
 
-        events, event_articles, _ = cluster_articles(articles)
-        if not articles and warnings:
+        # 4. Cluster ONCE (clustering NEVER removes articles)
+        events, event_articles, all_articles = cluster_articles(all_articles)
+
+        # 5. Select articles for newsletter presentation (for metrics and priority ordering)
+        presentation_articles = select_presentation_articles(
+            all_articles, events=events, per_section=5
+        )
+        articles_selected = len(presentation_articles)
+
+        # Order all articles so presentation articles appear first, followed by coverage articles
+        presentation_ids = {a.article_id for a in presentation_articles}
+        ordered_all_articles = [
+            *presentation_articles,
+            *[a for a in all_articles if a.article_id not in presentation_ids],
+        ]
+
+        if not all_articles and warnings:
             warnings = [*warnings, "수집된 기사가 없어 빈 이슈를 저장했습니다."]
 
         duration = time.perf_counter() - t0
@@ -273,9 +309,10 @@ def collect_and_store(
             collection_duration=round(duration, 4),
         ).to_dict()
 
+        # 6. Store ALL collected articles and events
         issue = store.save_issue(
             issue_date,
-            articles,
+            ordered_all_articles,
             warnings=warnings,
             events=events,
             event_articles=event_articles,

@@ -59,11 +59,11 @@ def test_same_event_clustered_across_multiple_publishers():
         entities=["Volkswagen"],
     )
 
-    events, event_articles, primary_articles = cluster_articles([a1, a2, a3, a4])
+    events, event_articles, all_articles = cluster_articles([a1, a2, a3, a4])
 
     assert len(events) == 1
-    assert len(primary_articles) == 1
-    primary = primary_articles[0]
+    assert len(all_articles) == 4
+    primary = next(a for a in all_articles if a.article_id == events[0].primary_article_id)
 
     # VW official newsroom should be selected as preferred primary reference
     assert primary.source == "Volkswagen Newsroom"
